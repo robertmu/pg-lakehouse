@@ -1,9 +1,10 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::Span;
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use syn::{
-    parse_macro_input, punctuated::Punctuated, ItemStruct, Lit, MetaNameValue, Token,
+    parse_macro_input, punctuated::Punctuated, ItemStruct, Lit, MetaNameValue, Token, LitStr,
 };
 
 /// Create necessary handler and meta functions for a PostgreSQL Table Access Method
@@ -84,7 +85,14 @@ pub fn pg_table_am(attr: TokenStream, item: TokenStream) -> TokenStream {
     let ident_snake = to_snake_case(ident_str.as_str());
 
     let module_ident = format_ident!("__{}_pgrx", ident_snake);
-    let fn_ident = format_ident!("{}_am_handler", ident_snake);
+    let fn_ident = format_ident!("{}_handler", ident_snake);
+
+    let sql_def = format!(
+        "CREATE OR REPLACE FUNCTION {0}(internal) RETURNS table_am_handler LANGUAGE c STRICT AS 'MODULE_PATHNAME', '{0}_wrapper';",
+        fn_ident
+    );
+    let sql_def_lit = LitStr::new(&sql_def, Span::call_site());
+
     let fn_meta_ident = format_ident!("{}_am_meta", ident_snake);
     let fn_get_meta_ident = format_ident!("{}_get_meta", ident_snake);
 
@@ -98,8 +106,8 @@ pub fn pg_table_am(attr: TokenStream, item: TokenStream) -> TokenStream {
             use pgrx::prelude::*;
             use pg_tam::prelude::*;
 
-            #[pg_extern(create_or_replace)]
-            fn #fn_ident() -> pg_tam::TableAmRoutine<pgrx::AllocatedByRust> {
+            #[pg_extern(create_or_replace, sql = #sql_def_lit)]
+            fn #fn_ident() -> pg_tam::TableAmRoutine {
                 #ident::am_routine()
             }
 

@@ -15,7 +15,6 @@ use crate::TableAmRoutine;
 use pgrx::pg_sys::panic::ErrorReport;
 use pgrx::{
     pg_sys::{self},
-    AllocatedByRust,
 };
 
 pub trait TableAccessMethod<E: Into<ErrorReport>> {
@@ -25,7 +24,7 @@ pub trait TableAccessMethod<E: Into<ErrorReport>> {
     type DdlState: AmDdl<E>;
     type ModifyState: AmModify<E> + 'static;
 
-    fn am_routine() -> TableAmRoutine<AllocatedByRust>
+    fn am_routine() -> TableAmRoutine
     where
         Self: Sized,
     {

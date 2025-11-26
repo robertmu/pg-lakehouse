@@ -21,7 +21,7 @@ pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
 pg_test = []
 
 [dependencies]
-pgrx = { workspace = true, default-features = false }
+pgrx = { workspace = true, default-features = false, features = ["cshim"] }
 thiserror = "1.0.63"
 tokio = { version = "1.43", features = ["rt", "net"] }
 uuid = { version = "1.10.0" }

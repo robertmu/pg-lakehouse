@@ -1,5 +1,15 @@
+use pg_tam::prelude::*;
 use pgrx::prelude::*;
 use std::sync::OnceLock;
+use crate::error::IcebergError;
+
+pub mod error;
+mod access;
+use access::scan::IcebergScan;
+use access::relation::IcebergRelation;
+use access::index::IcebergIndex;
+use access::ddl::IcebergDdl;
+use access::modify::IcebergModify;
 
 // crypto primitive provider initialization required by rustls > v0.22.
 // It is not required by every FDW, but only call it when needed.
@@ -19,6 +29,30 @@ pg_module_magic!();
 
 extension_sql_file!("../sql/bootstrap.sql", bootstrap);
 extension_sql_file!("../sql/finalize.sql", finalize);
+
+#[pg_guard]
+extern "C-unwind" fn _PG_init() {
+    setup_rustls_default_crypto_provider();
+}
+
+// ============================================================================
+//  Table Access Method Definition
+// ============================================================================
+
+#[pg_table_am(
+    version = "0.1.0",
+    author = "robertmu",
+    website = "https://github.com/robertmu/pg-lakehouse"
+)]
+pub struct IcebergTableAm;
+
+impl TableAccessMethod<IcebergError> for IcebergTableAm {
+    type ScanState = IcebergScan;
+    type RelationState = IcebergRelation;
+    type IndexState = IcebergIndex;
+    type DdlState = IcebergDdl;
+    type ModifyState = IcebergModify;
+}
 
 #[cfg(test)]
 pub mod pg_test {
