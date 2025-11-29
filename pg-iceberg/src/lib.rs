@@ -1,15 +1,16 @@
+use crate::error::IcebergError;
 use pg_tam::prelude::*;
 use pgrx::prelude::*;
 use std::sync::OnceLock;
-use crate::error::IcebergError;
 
-pub mod error;
 mod access;
-use access::scan::IcebergScan;
-use access::relation::IcebergRelation;
-use access::index::IcebergIndex;
+pub mod error;
+pub mod hooks;
 use access::ddl::IcebergDdl;
+use access::index::IcebergIndex;
 use access::modify::IcebergModify;
+use access::relation::IcebergRelation;
+use access::scan::IcebergScan;
 
 // crypto primitive provider initialization required by rustls > v0.22.
 // It is not required by every FDW, but only call it when needed.
@@ -33,6 +34,9 @@ extension_sql_file!("../sql/finalize.sql", finalize);
 #[pg_guard]
 extern "C-unwind" fn _PG_init() {
     setup_rustls_default_crypto_provider();
+    unsafe {
+        hooks::init_hooks();
+    }
 }
 
 // ============================================================================

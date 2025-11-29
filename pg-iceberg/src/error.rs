@@ -1,10 +1,13 @@
+use pg_tam::prelude::{CreateRuntimeError, TablespaceError};
 use pgrx::pg_sys::panic::ErrorReport;
 use pgrx::prelude::PgSqlErrorCode;
 use thiserror::Error;
-use pg_tam::prelude::CreateRuntimeError;
 
 #[derive(Error, Debug)]
 pub enum IcebergError {
+    #[error("tablespace error: {0}")]
+    TablespaceError(#[from] TablespaceError),
+
     #[error("column {0} is not found in source")]
     ColumnNotFound(String),
 
@@ -57,6 +60,8 @@ pub enum IcebergError {
 impl From<IcebergError> for ErrorReport {
     fn from(value: IcebergError) -> Self {
         let error_code = match &value {
+            IcebergError::TablespaceError(_) => PgSqlErrorCode::ERRCODE_INVALID_PARAMETER_VALUE,
+
             IcebergError::ColumnNotFound(_) => PgSqlErrorCode::ERRCODE_UNDEFINED_COLUMN,
 
             IcebergError::UnsupportedColumnType(_)

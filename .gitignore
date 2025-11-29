@@ -1,0 +1,9 @@
+# Rust build artifacts
+target/
+
+# Test data and results
+
+# OS generated files
+.DS_Store
+Thumbs.db
+

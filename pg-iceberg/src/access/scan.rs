@@ -1,5 +1,5 @@
-use pg_tam::prelude::*;
 use crate::error::{IcebergError, IcebergResult};
+use pg_tam::prelude::*;
 
 pub struct IcebergScan;
 
@@ -42,10 +42,7 @@ impl AmScan<IcebergError> for IcebergScan {
         Err(IcebergError::NotImplemented("scan_end"))
     }
 
-    fn scan_bitmap_next_block(
-        &mut self,
-        _tbmres: &TBMIterateResultHandle,
-    ) -> IcebergResult<bool> {
+    fn scan_bitmap_next_block(&mut self, _tbmres: &TBMIterateResultHandle) -> IcebergResult<bool> {
         Err(IcebergError::NotImplemented("scan_bitmap_next_block"))
     }
 

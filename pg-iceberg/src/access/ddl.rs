@@ -1,6 +1,6 @@
+use crate::error::{IcebergError, IcebergResult};
 use pg_tam::prelude::*;
 use pgrx::pg_sys;
-use crate::error::{IcebergError, IcebergResult};
 
 pub struct IcebergDdl;
 
@@ -14,7 +14,9 @@ impl AmDdl<IcebergError> for IcebergDdl {
     }
 
     fn relation_nontransactional_truncate(_rel: &RelationHandle) -> IcebergResult<()> {
-        Err(IcebergError::NotImplemented("relation_nontransactional_truncate"))
+        Err(IcebergError::NotImplemented(
+            "relation_nontransactional_truncate",
+        ))
     }
 
     fn relation_copy_data(

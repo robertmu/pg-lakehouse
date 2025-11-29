@@ -1,6 +1,6 @@
+use crate::error::{IcebergError, IcebergResult};
 use pg_tam::prelude::*;
 use pgrx::pg_sys;
-use crate::error::{IcebergError, IcebergResult};
 
 pub struct IcebergModify;
 

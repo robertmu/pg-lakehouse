@@ -13,9 +13,7 @@ use crate::handles::{
 };
 use crate::TableAmRoutine;
 use pgrx::pg_sys::panic::ErrorReport;
-use pgrx::{
-    pg_sys::{self},
-};
+use pgrx::pg_sys::{self};
 
 pub trait TableAccessMethod<E: Into<ErrorReport>> {
     type ScanState: AmScan<E>;

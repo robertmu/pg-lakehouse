@@ -1,5 +1,5 @@
-use pg_tam::prelude::*;
 use crate::error::{IcebergError, IcebergResult};
+use pg_tam::prelude::*;
 
 pub struct IcebergIndex;
 

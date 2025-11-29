@@ -51,6 +51,15 @@ pub mod relation;
 /// Registration logic for Table Access Method routines
 pub mod registry;
 
+/// Storage options handling (low-level FFI)
+pub mod storage_options;
+
+/// Tablespace options (type-safe wrapper)
+pub mod tablespace;
+
+/// Generic ProcessUtility hook framework
+pub mod utility_hook;
+
 /// Helper functions and utilities
 pub mod utils;
 
@@ -61,6 +70,10 @@ pub mod prelude {
     pub use crate::handles::*;
     pub use crate::pg_table_am;
     pub use crate::registry::make_table_am_routine;
+    pub use crate::tablespace::{TablespaceError, TablespaceOptions};
+    pub use crate::utility_hook::{
+        register_utility_hook, UtilityHook, UtilityHookError, UtilityNode,
+    };
     pub use crate::utils::{
         create_async_runtime, log_debug1, report_error, report_info, report_notice,
         report_warning, CreateRuntimeError,
