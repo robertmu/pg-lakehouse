@@ -34,9 +34,7 @@ extension_sql_file!("../sql/finalize.sql", finalize);
 #[pg_guard]
 extern "C-unwind" fn _PG_init() {
     setup_rustls_default_crypto_provider();
-    unsafe {
-        hooks::init_hooks();
-    }
+    hooks::init_hooks();
 }
 
 // ============================================================================

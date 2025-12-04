@@ -11,6 +11,8 @@ use thiserror::Error;
 pub enum TablespaceError {
     #[error("invalid tablespace option: {0}")]
     InvalidOption(String),
+    #[error("failed to update tablespace: {0}")]
+    UpdateFailed(String),
 }
 
 impl From<TablespaceError> for ErrorReport {
@@ -50,7 +52,11 @@ impl TablespaceOptions {
         }
     }
 
-    pub fn persist_to_catalog(&self, spcoid: pg_sys::Oid) {
-        storage_options::update_tablespace_options(spcoid, self.options.clone());
+    pub fn persist_to_catalog<E>(&self, spcoid: pg_sys::Oid) -> Result<(), E>
+    where
+        E: From<TablespaceError>,
+    {
+        storage_options::update_tablespace_options(spcoid, self.options.clone())
+            .map_err(|e| E::from(TablespaceError::UpdateFailed(e)))
     }
 }

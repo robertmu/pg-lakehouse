@@ -1,5 +1,4 @@
 use pgrx::pg_sys;
-use pgrx::prelude::*;
 use std::ffi::CStr;
 
 // ============================================================================
@@ -252,7 +251,7 @@ fn parse_bool(s: &str) -> Option<bool> {
 pub fn update_tablespace_options(
     spcoid: pg_sys::Oid,
     opts: Vec<(String, Option<String>)>,
-) {
+) -> Result<(), String> {
     let mut set_parts = Vec::new();
     for (k, v) in opts {
         if let Some(val) = v {
@@ -261,7 +260,7 @@ pub fn update_tablespace_options(
     }
 
     if set_parts.is_empty() {
-        return;
+        return Ok(());
     }
 
     // Escape for Postgres Array Literal:
@@ -287,6 +286,7 @@ pub fn update_tablespace_options(
     );
 
     if let Err(e) = pgrx::spi::Spi::run(&query_safe) {
-        error!("Failed to update tablespace options: {}", e);
+        return Err(format!("SPI execution failed: {}", e));
     }
+    Ok(())
 }

@@ -12,19 +12,17 @@ use crate::utils::{report_warning, ReportableError};
 use pgrx::pg_sys::panic::ErrorReport;
 use pgrx::prelude::*;
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
-// Wrapper to hold state and reusable row buffer
 struct ModifySession {
     state: Box<dyn Any>,
     row_buffer: Row,
 }
 
-// Global state storage: Table OID -> Session
-// We use thread_local + RefCell to safely manage state without unsafe static mut
 thread_local! {
-    static MODIFY_STATES: RefCell<HashMap<pg_sys::Oid, ModifySession>> = RefCell::new(HashMap::new());
+    static MODIFY_STATES: RefCell<HashMap<pg_sys::Oid, Box<ModifySession>>> = RefCell::new(HashMap::new());
+    static LAST_USED_SESSION: Cell<Option<(pg_sys::Oid, *mut ModifySession)>> = const { Cell::new(None) };
 }
 
 #[pg_guard]
@@ -33,20 +31,23 @@ where
     E: Into<ErrorReport>,
     T: AmModify<E> + 'static,
 {
-    // arg is the OID we stored
-    // Safe: OID (u32) fits into pointer sized integer on all supported platforms
     let relid = pg_sys::Oid::from(arg as usize as u32);
+
+    LAST_USED_SESSION.with(|last| {
+        if let Some((cached_relid, _)) = last.get() {
+            if cached_relid == relid {
+                last.set(None);
+            }
+        }
+    });
 
     MODIFY_STATES.with(|states| {
         let mut map = states.borrow_mut();
-        // Remove state from registry
-        if let Some(session) = map.remove(&relid) {
-            let boxed_state = session.state;
+        if let Some(boxed_session) = map.remove(&relid) {
+            let boxed_state = boxed_session.state;
             // Downcast to actual type
             if let Ok(mut state) = boxed_state.downcast::<T>() {
-                // Call end_modify and handle errors
                 if let Err(e) = state.end_modify() {
-                    // Log warning but don't panic during cleanup
                     report_warning(&format!(
                         "end_modify failed for relation {}: {:?}",
                         relid,
@@ -59,7 +60,7 @@ where
     // State is dropped here, calling Drop if implemented
 }
 
-fn ensure_modify_state_exists<E, T>(rel: pg_sys::Relation) -> Result<(), E>
+fn get_or_create_session<E, T>(rel: pg_sys::Relation) -> Result<*mut ModifySession, E>
 where
     E: Into<ErrorReport>,
     T: AmModify<E> + 'static,
@@ -67,38 +68,36 @@ where
     unsafe {
         let relid = (*rel).rd_id;
 
-        // Check if state already exists
+        if let Some((cached_relid, cached_ptr)) =
+            LAST_USED_SESSION.with(|last| last.get())
+        {
+            if cached_relid == relid {
+                return Ok(cached_ptr);
+            }
+        }
+
+        // Slow path: check HashMap and initialize if needed
         let needs_init =
             MODIFY_STATES.with(|states| !states.borrow().contains_key(&relid));
 
         if needs_init {
-            // === Lazy initialization ===
-
-            // 1. Create new instance (lightweight construction)
             let mut instance = T::new(rel)?;
-
-            // 2. Begin modification (heavyweight resource initialization)
             instance.begin_modify()?;
 
-            // 3. Create session with state and empty row buffer
-            let session = ModifySession {
+            let session = Box::new(ModifySession {
                 state: Box::new(instance),
                 row_buffer: Row::new(),
-            };
+            });
 
-            // 4. Store it in the global registry
             MODIFY_STATES.with(|states| {
                 states.borrow_mut().insert(relid, session);
             });
 
-            // 5. Register memory context callback for automatic cleanup
-            //    When the current memory context (e.g., ExecutorContext) is destroyed,
-            //    PostgreSQL will automatically call our cleanup function
             let callback = pg_sys::palloc0(std::mem::size_of::<
                 pg_sys::MemoryContextCallback,
             >()) as *mut pg_sys::MemoryContextCallback;
+
             (*callback).func = Some(cleanup_modify_state::<E, T>);
-            // Safe: OID (u32) fits into pointer sized integer on all supported platforms
             (*callback).arg = relid.to_u32() as usize as *mut ::core::ffi::c_void;
 
             pg_sys::MemoryContextRegisterResetCallback(
@@ -107,7 +106,16 @@ where
             );
         }
 
-        Ok(())
+        let session_ptr = MODIFY_STATES.with(|states| {
+            let mut map = states.borrow_mut();
+            let boxed_session = map
+                .get_mut(&relid)
+                .expect("Session should exist after initialization");
+            boxed_session.as_mut() as *mut ModifySession
+        });
+
+        LAST_USED_SESSION.with(|last| last.set(Some((relid, session_ptr))));
+        Ok(session_ptr)
     }
 }
 
@@ -123,39 +131,28 @@ pub extern "C-unwind" fn tuple_insert<E, T>(
     T: AmModify<E> + 'static,
 {
     unsafe {
-        ensure_modify_state_exists::<E, T>(rel).report_unwrap();
+        let session = get_or_create_session::<E, T>(rel).report_unwrap();
 
         // Convert bistate to Handle if not null
-        let mut bistate_handle = if bistate.is_null() {
-            None
-        } else {
-            Some(BulkInsertStateHandle::from_raw(bistate))
-        };
+        let mut bistate_handle =
+            (!bistate.is_null()).then(|| BulkInsertStateHandle::from_raw(bistate));
 
-        let relid = (*rel).rd_id;
-        MODIFY_STATES.with(|states| {
-            let mut map = states.borrow_mut();
-            let session = map
-                .get_mut(&relid)
-                .expect("State should exist after ensure_modify_state_exists");
+        // Update reused row buffer from slot
+        (*session).row_buffer.update_from_slot(slot);
 
-            // Update reused row buffer from slot
-            session.row_buffer.update_from_slot(slot);
+        let state = (*session)
+            .state
+            .downcast_mut::<T>()
+            .expect("State type mismatch - this is a bug");
 
-            let state = session
-                .state
-                .downcast_mut::<T>()
-                .expect("State type mismatch - this is a bug");
-
-            state
-                .tuple_insert(
-                    &session.row_buffer,
-                    cid,
-                    options,
-                    bistate_handle.as_mut(),
-                )
-                .report_unwrap();
-        });
+        state
+            .tuple_insert(
+                &(*session).row_buffer,
+                cid,
+                options,
+                bistate_handle.as_mut(),
+            )
+            .report_unwrap();
     }
 }
 
@@ -172,38 +169,27 @@ pub extern "C-unwind" fn tuple_insert_speculative<E, T>(
     T: AmModify<E> + 'static,
 {
     unsafe {
-        ensure_modify_state_exists::<E, T>(rel).report_unwrap();
+        let session = get_or_create_session::<E, T>(rel).report_unwrap();
 
-        let mut bistate_handle = if bistate.is_null() {
-            None
-        } else {
-            Some(BulkInsertStateHandle::from_raw(bistate))
-        };
+        let mut bistate_handle =
+            (!bistate.is_null()).then(|| BulkInsertStateHandle::from_raw(bistate));
 
-        let relid = (*rel).rd_id;
-        MODIFY_STATES.with(|states| {
-            let mut map = states.borrow_mut();
-            let session = map
-                .get_mut(&relid)
-                .expect("State should exist after ensure_modify_state_exists");
+        // Update reused row buffer from slot
+        (*session).row_buffer.update_from_slot(slot);
 
-            // Update reused row buffer from slot
-            session.row_buffer.update_from_slot(slot);
+        let state = (*session)
+            .state
+            .downcast_mut::<T>()
+            .expect("State type mismatch - this is a bug");
 
-            let state = session
-                .state
-                .downcast_mut::<T>()
-                .expect("State type mismatch - this is a bug");
-
-            state
-                .tuple_insert(
-                    &session.row_buffer,
-                    cid,
-                    options,
-                    bistate_handle.as_mut(),
-                )
-                .report_unwrap();
-        });
+        state
+            .tuple_insert(
+                &(*session).row_buffer,
+                cid,
+                options,
+                bistate_handle.as_mut(),
+            )
+            .report_unwrap();
     }
 }
 
@@ -218,32 +204,19 @@ pub extern "C-unwind" fn tuple_complete_speculative<E, T>(
     T: AmModify<E> + 'static,
 {
     unsafe {
-        ensure_modify_state_exists::<E, T>(rel).report_unwrap();
+        let session = get_or_create_session::<E, T>(rel).report_unwrap();
 
-        let relid = (*rel).rd_id;
+        // Update reused row buffer from slot
+        (*session).row_buffer.update_from_slot(slot);
 
-        MODIFY_STATES.with(|states| {
-            let mut map = states.borrow_mut();
-            let session = map
-                .get_mut(&relid)
-                .expect("State should exist after ensure_modify_state_exists");
+        let state = (*session)
+            .state
+            .downcast_mut::<T>()
+            .expect("State type mismatch - this is a bug");
 
-            // Update reused row buffer from slot
-            session.row_buffer.update_from_slot(slot);
-
-            let state = session
-                .state
-                .downcast_mut::<T>()
-                .expect("State type mismatch - this is a bug");
-
-            state
-                .tuple_complete_speculative(
-                    &session.row_buffer,
-                    spec_token,
-                    succeeded,
-                )
-                .report_unwrap();
-        });
+        state
+            .tuple_complete_speculative(&(*session).row_buffer, spec_token, succeeded)
+            .report_unwrap();
     }
 }
 
@@ -260,7 +233,7 @@ pub extern "C-unwind" fn multi_insert<E, T>(
     T: AmModify<E> + 'static,
 {
     unsafe {
-        ensure_modify_state_exists::<E, T>(rel).report_unwrap();
+        let session = get_or_create_session::<E, T>(rel).report_unwrap();
 
         // For multi_insert, we still need to allocate vector of Rows as the trait expects slice.
         // Optimization: we could reuse a Vec<Row> in ModifySession if multi_insert is frequent,
@@ -272,28 +245,17 @@ pub extern "C-unwind" fn multi_insert<E, T>(
             .map(|&slot| Row::from_slot(slot))
             .collect();
 
-        let mut bistate_handle = if bistate.is_null() {
-            None
-        } else {
-            Some(BulkInsertStateHandle::from_raw(bistate))
-        };
+        let mut bistate_handle =
+            (!bistate.is_null()).then(|| BulkInsertStateHandle::from_raw(bistate));
 
-        let relid = (*rel).rd_id;
-        MODIFY_STATES.with(|states| {
-            let mut map = states.borrow_mut();
-            let session = map
-                .get_mut(&relid)
-                .expect("State should exist after ensure_modify_state_exists");
+        let state = (*session)
+            .state
+            .downcast_mut::<T>()
+            .expect("State type mismatch - this is a bug");
 
-            let state = session
-                .state
-                .downcast_mut::<T>()
-                .expect("State type mismatch - this is a bug");
-
-            state
-                .multi_insert(&rows, cid, options, bistate_handle.as_mut())
-                .report_unwrap();
-        });
+        state
+            .multi_insert(&rows, cid, options, bistate_handle.as_mut())
+            .report_unwrap();
     }
 }
 
@@ -313,41 +275,30 @@ where
     T: AmModify<E> + 'static,
 {
     unsafe {
-        ensure_modify_state_exists::<E, T>(rel).report_unwrap();
+        let session = get_or_create_session::<E, T>(rel).report_unwrap();
 
         let tid = ItemPointer::from_raw(tid);
         let snapshot_handle = SnapshotHandle::from_raw(snapshot);
-        let crosscheck_handle = if crosscheck.is_null() {
-            None
-        } else {
-            Some(SnapshotHandle::from_raw(crosscheck))
-        };
+        let crosscheck_handle =
+            (!crosscheck.is_null()).then(|| SnapshotHandle::from_raw(crosscheck));
         let mut tmfd_rust = TM_FailureData::default();
 
-        let relid = (*rel).rd_id;
-        let result = MODIFY_STATES.with(|states| {
-            let mut map = states.borrow_mut();
-            let session = map
-                .get_mut(&relid)
-                .expect("State should exist after ensure_modify_state_exists");
+        let state = (*session)
+            .state
+            .downcast_mut::<T>()
+            .expect("State type mismatch - this is a bug");
 
-            let state = session
-                .state
-                .downcast_mut::<T>()
-                .expect("State type mismatch - this is a bug");
-
-            state
-                .tuple_delete(
-                    &tid,
-                    cid,
-                    &snapshot_handle,
-                    crosscheck_handle.as_ref(),
-                    wait,
-                    &mut tmfd_rust,
-                    changing_part,
-                )
-                .report_unwrap()
-        });
+        let result = state
+            .tuple_delete(
+                &tid,
+                cid,
+                &snapshot_handle,
+                crosscheck_handle.as_ref(),
+                wait,
+                &mut tmfd_rust,
+                changing_part,
+            )
+            .report_unwrap();
 
         tmfd_rust.write_to_ptr(tmfd);
 
@@ -373,46 +324,35 @@ where
     T: AmModify<E> + 'static,
 {
     unsafe {
-        ensure_modify_state_exists::<E, T>(rel).report_unwrap();
+        let session = get_or_create_session::<E, T>(rel).report_unwrap();
 
         let otid = ItemPointer::from_raw(otid);
         // Update buffer from slot
         let snapshot_handle = SnapshotHandle::from_raw(snapshot);
-        let crosscheck_handle = if crosscheck.is_null() {
-            None
-        } else {
-            Some(SnapshotHandle::from_raw(crosscheck))
-        };
+        let crosscheck_handle =
+            (!crosscheck.is_null()).then(|| SnapshotHandle::from_raw(crosscheck));
         let mut tmfd_rust = TM_FailureData::default();
 
-        let relid = (*rel).rd_id;
-        let result = MODIFY_STATES.with(|states| {
-            let mut map = states.borrow_mut();
-            let session = map
-                .get_mut(&relid)
-                .expect("State should exist after ensure_modify_state_exists");
+        (*session).row_buffer.update_from_slot(slot);
 
-            session.row_buffer.update_from_slot(slot);
+        let state = (*session)
+            .state
+            .downcast_mut::<T>()
+            .expect("State type mismatch - this is a bug");
 
-            let state = session
-                .state
-                .downcast_mut::<T>()
-                .expect("State type mismatch - this is a bug");
-
-            state
-                .tuple_update(
-                    &otid,
-                    &session.row_buffer,
-                    cid,
-                    &snapshot_handle,
-                    crosscheck_handle.as_ref(),
-                    wait,
-                    &mut tmfd_rust,
-                    &mut *lockmode,
-                    &mut *update_indexes,
-                )
-                .report_unwrap()
-        });
+        let result = state
+            .tuple_update(
+                &otid,
+                &(*session).row_buffer,
+                cid,
+                &snapshot_handle,
+                crosscheck_handle.as_ref(),
+                wait,
+                &mut tmfd_rust,
+                &mut *lockmode,
+                &mut *update_indexes,
+            )
+            .report_unwrap();
 
         tmfd_rust.write_to_ptr(tmfd);
 
@@ -437,41 +377,33 @@ where
     T: AmModify<E> + 'static,
 {
     unsafe {
-        ensure_modify_state_exists::<E, T>(rel).report_unwrap();
+        let session = get_or_create_session::<E, T>(rel).report_unwrap();
 
         let tid = ItemPointer::from_raw(tid);
         let snapshot_handle = SnapshotHandle::from_raw(snapshot);
         let mut tmfd_rust = TM_FailureData::default();
 
-        let relid = (*rel).rd_id;
-        let result = MODIFY_STATES.with(|states| {
-            let mut map = states.borrow_mut();
-            let session = map
-                .get_mut(&relid)
-                .expect("State should exist after ensure_modify_state_exists");
+        // Note: tuple_lock might modify the row (e.g. stores current version), so passing mut ref is correct
+        // But for consistency with update_from_slot, we first fill it
+        (*session).row_buffer.update_from_slot(slot);
 
-            // Note: tuple_lock might modify the row (e.g. stores current version), so passing mut ref is correct
-            // But for consistency with update_from_slot, we first fill it
-            session.row_buffer.update_from_slot(slot);
+        let state = (*session)
+            .state
+            .downcast_mut::<T>()
+            .expect("State type mismatch - this is a bug");
 
-            let state = session
-                .state
-                .downcast_mut::<T>()
-                .expect("State type mismatch - this is a bug");
-
-            state
-                .tuple_lock(
-                    &tid,
-                    &snapshot_handle,
-                    &mut session.row_buffer,
-                    cid,
-                    mode,
-                    wait_policy,
-                    flags,
-                    &mut tmfd_rust,
-                )
-                .report_unwrap()
-        });
+        let result = state
+            .tuple_lock(
+                &tid,
+                &snapshot_handle,
+                &mut (*session).row_buffer,
+                cid,
+                mode,
+                wait_policy,
+                flags,
+                &mut tmfd_rust,
+            )
+            .report_unwrap();
 
         tmfd_rust.write_to_ptr(tmfd);
 
@@ -490,6 +422,19 @@ pub extern "C-unwind" fn finish_bulk_insert<E, T>(
     unsafe {
         let relid = (*rel).rd_id;
 
+        // Fast path: check if this is the cached session
+        if let Some((cached_relid, cached_ptr)) =
+            LAST_USED_SESSION.with(|last| last.get())
+        {
+            if cached_relid == relid {
+                if let Some(state) = (*cached_ptr).state.downcast_mut::<T>() {
+                    state.finish_bulk_insert(options).report_unwrap();
+                }
+                return;
+            }
+        }
+
+        // Slow path: lookup in HashMap
         // Only call finish if we have an active state
         // We don't want to create a new state just to finish it
         MODIFY_STATES.with(|states| {
@@ -516,20 +461,13 @@ where
         // Try to get existing state, or create if needed (VACUUM typically runs as separate operation).
         // We silently ignore initialization errors here as index deletion is often a best-effort
         // maintenance operation (like VACUUM).
-        if ensure_modify_state_exists::<E, T>(rel).is_ok() {
-            let relid = (*rel).rd_id;
-            return MODIFY_STATES.with(|states| {
-                let mut map = states.borrow_mut();
-                if let Some(session) = map.get_mut(&relid) {
-                    if let Some(state) = session.state.downcast_mut::<T>() {
-                        // Default to InvalidTransactionId if implementation fails/returns error
-                        return state
-                            .index_delete_tuples(&mut *delstate)
-                            .unwrap_or(pg_sys::InvalidTransactionId);
-                    }
-                }
-                pg_sys::InvalidTransactionId
-            });
+        if let Ok(session) = get_or_create_session::<E, T>(rel) {
+            if let Some(state) = (*session).state.downcast_mut::<T>() {
+                // Default to InvalidTransactionId if implementation fails/returns error
+                return state
+                    .index_delete_tuples(&mut *delstate)
+                    .unwrap_or(pg_sys::InvalidTransactionId);
+            }
         }
         pg_sys::InvalidTransactionId
     }

@@ -10,13 +10,12 @@ impl UtilityHook for IcebergTablespaceHook {
             .is_a_mut::<pg_sys::CreateTableSpaceStmt>(pg_sys::NodeTag::T_CreateTableSpaceStmt)
             .expect("Hook registered for T_CreateTableSpaceStmt but received different node type");
 
-        if let Err(e) = TablespaceOptions::extract_from_stmt::<IcebergError>(stmt) {
-            return Err(UtilityHookError::Internal(e.to_string()));
-        }
+        TablespaceOptions::extract_from_stmt::<IcebergError>(stmt)
+            .map_err(|e| UtilityHookError::Internal(e.to_string()))?;
         Ok(())
     }
 
-    fn on_post(&self, context: &mut UtilityNode) {
+    fn on_post(&self, context: &mut UtilityNode) -> Result<(), UtilityHookError> {
         let stmt = context
             .is_a_mut::<pg_sys::CreateTableSpaceStmt>(pg_sys::NodeTag::T_CreateTableSpaceStmt)
             .expect("Hook registered for T_CreateTableSpaceStmt but received different node type");
@@ -24,8 +23,10 @@ impl UtilityHook for IcebergTablespaceHook {
         if let Ok(Some(opts)) = TablespaceOptions::extract_from_stmt::<IcebergError>(stmt) {
             let spcname_ptr = stmt.tablespacename;
             let oid = unsafe { pg_sys::get_tablespace_oid(spcname_ptr, false) };
-            opts.persist_to_catalog(oid);
+            opts.persist_to_catalog::<IcebergError>(oid)
+                .map_err(|e| UtilityHookError::Internal(e.to_string()))?;
         }
+        Ok(())
     }
 }
 

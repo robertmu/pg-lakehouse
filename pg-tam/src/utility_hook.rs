@@ -35,29 +35,17 @@ impl<'a> UtilityNode<'a> {
     }
 
     pub fn is_a<T>(&self, tag: pg_sys::NodeTag) -> Option<&T> {
-        unsafe {
-            if (*self.ptr).type_ == tag {
-                Some(&*(self.ptr as *const T))
-            } else {
-                None
-            }
-        }
+        unsafe { ((*self.ptr).type_ == tag).then(|| &*(self.ptr as *const T)) }
     }
 
     pub fn is_a_mut<T>(&mut self, tag: pg_sys::NodeTag) -> Option<&mut T> {
-        unsafe {
-            if (*self.ptr).type_ == tag {
-                Some(&mut *(self.ptr as *mut T))
-            } else {
-                None
-            }
-        }
+        unsafe { ((*self.ptr).type_ == tag).then(|| &mut *(self.ptr as *mut T)) }
     }
 }
 
 pub trait UtilityHook: Sync + Send {
     fn on_pre(&self, context: &mut UtilityNode) -> Result<(), UtilityHookError>;
-    fn on_post(&self, context: &mut UtilityNode);
+    fn on_post(&self, context: &mut UtilityNode) -> Result<(), UtilityHookError>;
 }
 
 static REGISTRY: RwLock<Vec<(pg_sys::NodeTag, Arc<dyn UtilityHook>)>> =
@@ -110,6 +98,9 @@ unsafe extern "C-unwind" fn process_utility_router(
         }
     }
 
+    // TODO: Consider wrapping these PG calls with PgTryBuilder to safely handle
+    // longjmp (elog(ERROR)) and ensure Rust destructors (like safe_node_copy) are called properly.
+    // Currently, if standard_ProcessUtility errors, Rust stack unwinding might be bypassed.
     match PREV_PROCESS_UTILITY.get() {
         Some(Some(prev)) => {
             prev(
@@ -142,7 +133,7 @@ unsafe extern "C-unwind" fn process_utility_router(
             .expect("Lock poisoning should be impossible in a single-threaded Postgres backend");
         for (reg_tag, hook) in registry.iter() {
             if *reg_tag == tag {
-                hook.on_post(&mut safe_node_copy);
+                hook.on_post(&mut safe_node_copy).report_unwrap();
             }
         }
     }
