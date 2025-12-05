@@ -10,13 +10,12 @@ impl AmDdl<IcebergError> for IcebergDdl {
         _newrlocator: &RelFileLocator,
         _persistence: u8,
     ) -> IcebergResult<(pg_sys::TransactionId, pg_sys::MultiXactId)> {
-        Err(IcebergError::NotImplemented("relation_set_new_filelocator"))
+        Ok((pg_sys::InvalidTransactionId, 0u32.into()))
     }
 
     fn relation_nontransactional_truncate(_rel: &RelationHandle) -> IcebergResult<()> {
-        Err(IcebergError::NotImplemented(
-            "relation_nontransactional_truncate",
-        ))
+        // No-op for now: Iceberg table truncation will be handled via Iceberg metadata.
+        Ok(())
     }
 
     fn relation_copy_data(

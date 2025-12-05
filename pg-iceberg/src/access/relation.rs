@@ -9,13 +9,17 @@ impl AmRelation<IcebergError> for IcebergRelation {
         _rel: &RelationHandle,
         _attr_widths: Option<&mut [i32]>,
     ) -> IcebergResult<(pg_sys::BlockNumber, f64, f64)> {
-        Err(IcebergError::NotImplemented("relation_estimate_size"))
+        // Return zeros for now: (pages, tuples, all_visible_pages)
+        // This allows basic DDL operations to complete.
+        Ok((0, 0.0, 0.0))
     }
 
     fn relation_size(
         _rel: &RelationHandle,
         _fork_number: pg_sys::ForkNumber::Type,
     ) -> IcebergResult<u64> {
-        Err(IcebergError::NotImplemented("relation_size"))
+        // Return 0 bytes for now.
+        // Real implementation would query Iceberg metadata for actual data files size.
+        Ok(0)
     }
 }

@@ -1,6 +1,7 @@
-use crate::error::IcebergError;
+use pg_tam::pg_wrapper::PgWrapper;
 use pg_tam::prelude::*;
 use pgrx::pg_sys;
+use std::ffi::CStr;
 
 struct IcebergTablespaceHook;
 
@@ -10,8 +11,9 @@ impl UtilityHook for IcebergTablespaceHook {
             .is_a_mut::<pg_sys::CreateTableSpaceStmt>(pg_sys::NodeTag::T_CreateTableSpaceStmt)
             .expect("Hook registered for T_CreateTableSpaceStmt but received different node type");
 
-        TablespaceOptions::extract_from_stmt::<IcebergError>(stmt)
-            .map_err(|e| UtilityHookError::Internal(e.to_string()))?;
+        TablespaceOptions::extract_from_stmt(stmt).map_err(|e| {
+            UtilityHookError::Internal(format!("tablespace: option extraction failed - {}", e))
+        })?;
         Ok(())
     }
 
@@ -20,11 +22,20 @@ impl UtilityHook for IcebergTablespaceHook {
             .is_a_mut::<pg_sys::CreateTableSpaceStmt>(pg_sys::NodeTag::T_CreateTableSpaceStmt)
             .expect("Hook registered for T_CreateTableSpaceStmt but received different node type");
 
-        if let Ok(Some(opts)) = TablespaceOptions::extract_from_stmt::<IcebergError>(stmt) {
-            let spcname_ptr = stmt.tablespacename;
-            let oid = unsafe { pg_sys::get_tablespace_oid(spcname_ptr, false) };
-            opts.persist_to_catalog::<IcebergError>(oid)
-                .map_err(|e| UtilityHookError::Internal(e.to_string()))?;
+        if let Ok(Some(opts)) = TablespaceOptions::extract_from_stmt(stmt) {
+            let spcname = unsafe { CStr::from_ptr(stmt.tablespacename) };
+            let oid = PgWrapper::get_tablespace_oid(spcname, false).map_err(|e| {
+                UtilityHookError::Internal(format!(
+                    "tablespace: failed to get tablespace OID - {}",
+                    e
+                ))
+            })?;
+            opts.persist_to_catalog(oid).map_err(|e| {
+                UtilityHookError::Internal(format!(
+                    "tablespace: failed to persist options to catalog - {}",
+                    e
+                ))
+            })?;
         }
         Ok(())
     }

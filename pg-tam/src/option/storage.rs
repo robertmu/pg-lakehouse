@@ -1,3 +1,8 @@
+//! Low-level storage options extraction and validation.
+//!
+//! This module provides the core functionality for extracting custom options
+//! from PostgreSQL DDL statements and validating them against a schema.
+
 use pgrx::pg_sys;
 use std::ffi::CStr;
 
@@ -29,7 +34,7 @@ pub enum OptionKind {
     },
 }
 
-pub struct StorageOptionDef {
+pub struct TamOptionDef {
     pub name: &'static str, // Core name without prefix, e.g., "bucket", "region"
     pub category: StorageCategory,
     pub kind: OptionKind,
@@ -37,9 +42,9 @@ pub struct StorageOptionDef {
 }
 
 // Define all standard options common to storage extensions.
-static STANDARD_STORAGE_OPTIONS: &[StorageOptionDef] = &[
+static STANDARD_STORAGE_OPTIONS: &[TamOptionDef] = &[
     // --- Common ---
-    StorageOptionDef {
+    TamOptionDef {
         name: "protocol",
         category: StorageCategory::Common,
         kind: OptionKind::String {
@@ -48,13 +53,13 @@ static STANDARD_STORAGE_OPTIONS: &[StorageOptionDef] = &[
         description: "Storage protocol (s3, gcs, azure, fs)",
     },
     // --- S3 ---
-    StorageOptionDef {
+    TamOptionDef {
         name: "bucket",
         category: StorageCategory::S3,
         kind: OptionKind::String { default: None },
         description: "S3 Bucket name",
     },
-    StorageOptionDef {
+    TamOptionDef {
         name: "region",
         category: StorageCategory::S3,
         kind: OptionKind::String {
@@ -62,32 +67,32 @@ static STANDARD_STORAGE_OPTIONS: &[StorageOptionDef] = &[
         },
         description: "AWS Region",
     },
-    StorageOptionDef {
+    TamOptionDef {
         name: "endpoint",
         category: StorageCategory::S3,
         kind: OptionKind::String { default: None },
         description: "Custom S3 Endpoint (for MinIO etc)",
     },
-    StorageOptionDef {
+    TamOptionDef {
         name: "allow_http",
         category: StorageCategory::S3,
         kind: OptionKind::Bool { default: false },
         description: "Allow HTTP connections (insecure)",
     },
-    StorageOptionDef {
+    TamOptionDef {
         name: "access_key_id",
         category: StorageCategory::S3,
         kind: OptionKind::String { default: None },
         description: "S3 Access Key ID",
     },
-    StorageOptionDef {
+    TamOptionDef {
         name: "secret_access_key",
         category: StorageCategory::S3,
         kind: OptionKind::String { default: None },
         description: "S3 Secret Access Key",
     },
     // --- FileSystem ---
-    StorageOptionDef {
+    TamOptionDef {
         name: "io_concurrency",
         category: StorageCategory::FileSystem,
         kind: OptionKind::Int {
@@ -103,52 +108,50 @@ static STANDARD_STORAGE_OPTIONS: &[StorageOptionDef] = &[
 //  Extraction Logic
 // ============================================================================
 
-/// Extract and remove custom storage options from CreateTableSpaceStmt.
+/// Extract and remove custom options from a generic list of DefElem.
 ///
-/// This function iterates through the options provided in the `CREATE TABLESPACE` statement.
-/// If an option matches one of the `STANDARD_STORAGE_OPTIONS`, it is validated, extracted,
+/// This function iterates through the options provided in a DDL statement.
+/// If an option matches one of the `valid_options`, it is validated, extracted,
 /// and removed from the statement's options list.
 ///
+/// This serves both CreateStmt (tables) and CreateTableSpaceStmt.
+///
 /// # Arguments
-/// * `stmt` - Pointer to the Postgres CreateTableSpaceStmt
+/// * `options_list_ptr` - Pointer to the options list pointer
+/// * `valid_options` - List of valid option definitions to match against
 ///
 /// # Returns
 /// * `Ok(Vec<(String, Option<String>)>)` - A list of validated custom options.
 /// * `Err(String)` - If validation fails for any option.
-pub unsafe fn extract_and_remove_custom_options(
-    stmt: *mut pg_sys::CreateTableSpaceStmt,
+pub unsafe fn extract_and_remove_options(
+    options_list_ptr: *mut *mut pg_sys::List,
+    valid_options: &[TamOptionDef],
 ) -> Result<Vec<(String, Option<String>)>, String> {
     let mut custom_opts = Vec::new();
     let mut new_pg_opts: *mut pg_sys::List = std::ptr::null_mut();
 
-    if (*stmt).options.is_null() {
+    if (*options_list_ptr).is_null() {
         return Ok(custom_opts);
     }
 
-    let cell = (*(*stmt).options).elements;
-    let length = (*(*stmt).options).length;
+    let cell = (*(*options_list_ptr)).elements;
+    let length = (*(*options_list_ptr)).length;
 
     for i in 0..length {
         let def_elem_ptr = (*cell.add(i as usize)).ptr_value as *mut pg_sys::DefElem;
         let def_name_cstr = CStr::from_ptr((*def_elem_ptr).defname);
         let def_name = def_name_cstr.to_string_lossy().to_string();
 
-        // Check if this option is one of our standard storage options
-        if let Some(def) = STANDARD_STORAGE_OPTIONS
-            .iter()
-            .find(|opt| opt.name == def_name)
-        {
+        // Check if this option is one of our valid options
+        if let Some(def) = valid_options.iter().find(|opt| opt.name == def_name) {
             // 1. Extract raw value
             // Use Postgres internal helper `defGetString` which handles T_String, T_Integer, T_Float, and T_A_Const (PG15+)
             let raw_val = if (*def_elem_ptr).arg.is_null() {
                 None
             } else {
                 let val_ptr = pg_sys::defGetString(def_elem_ptr);
-                if val_ptr.is_null() {
-                    None
-                } else {
-                    Some(CStr::from_ptr(val_ptr).to_string_lossy().to_string())
-                }
+                (!val_ptr.is_null())
+                    .then(|| CStr::from_ptr(val_ptr).to_string_lossy().into_owned())
             };
 
             // 2. Check for duplicate options
@@ -178,12 +181,19 @@ pub unsafe fn extract_and_remove_custom_options(
         }
     }
 
-    (*stmt).options = new_pg_opts;
+    *options_list_ptr = new_pg_opts;
     Ok(custom_opts)
 }
 
+/// Legacy wrapper for tablespace options
+pub unsafe fn extract_and_remove_custom_options(
+    stmt: *mut pg_sys::CreateTableSpaceStmt,
+) -> Result<Vec<(String, Option<String>)>, String> {
+    extract_and_remove_options(&mut (*stmt).options, STANDARD_STORAGE_OPTIONS)
+}
+
 fn validate_option_value(
-    def: &StorageOptionDef,
+    def: &TamOptionDef,
     raw_val: Option<String>,
 ) -> Result<Option<String>, String> {
     match &def.kind {
@@ -242,51 +252,4 @@ fn parse_bool(s: &str) -> Option<bool> {
         "false" | "f" | "no" | "n" | "off" | "0" => Some(false),
         _ => None,
     }
-}
-
-/// Update pg_tablespace catalog with extracted custom options.
-///
-/// This function is safe because it only uses PGRX's safe SPI interface
-/// and works with pure Rust types (Oid is just a u32, and Vec is managed by Rust).
-pub fn update_tablespace_options(
-    spcoid: pg_sys::Oid,
-    opts: Vec<(String, Option<String>)>,
-) -> Result<(), String> {
-    let mut set_parts = Vec::new();
-    for (k, v) in opts {
-        if let Some(val) = v {
-            set_parts.push(format!("{}={}", k, val));
-        }
-    }
-
-    if set_parts.is_empty() {
-        return Ok(());
-    }
-
-    // Escape for Postgres Array Literal:
-    // 1. Backslashes must be escaped first (\ -> \\)
-    // 2. Double quotes must be escaped (" -> \")
-    let array_body = set_parts
-        .iter()
-        .map(|s| {
-            let escaped = s.replace("\\", "\\\\").replace("\"", "\\\"");
-            format!("\"{}\"", escaped)
-        })
-        .collect::<Vec<_>>()
-        .join(",");
-
-    let raw_array_literal = format!("{{{}}}", array_body);
-
-    // Escape for SQL String Literal: ' -> ''
-    let sql_literal = format!("'{}'", raw_array_literal.replace("'", "''"));
-
-    let query_safe = format!(
-        "UPDATE pg_catalog.pg_tablespace SET spcoptions = COALESCE(spcoptions, '{{}}'::text[]) || {}::text[] WHERE oid = {}",
-        sql_literal, spcoid
-    );
-
-    if let Err(e) = pgrx::spi::Spi::run(&query_safe) {
-        return Err(format!("SPI execution failed: {}", e));
-    }
-    Ok(())
 }

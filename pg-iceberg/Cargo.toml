@@ -24,7 +24,7 @@ pg_test = []
 
 [dependencies]
 pgrx = { workspace = true }
-pg-tam = { path = "../pg-tam", default-features = false }
+pg-tam = { path = "../pg-tam" }
 thiserror = "1.0"
 serde_json = "1.0"
 arrow-schema = "52"
