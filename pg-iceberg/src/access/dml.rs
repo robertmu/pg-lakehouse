@@ -4,7 +4,7 @@ use pgrx::pg_sys;
 
 pub struct IcebergModify;
 
-impl AmModify<IcebergError> for IcebergModify {
+impl AmDml<IcebergError> for IcebergModify {
     fn new(_rel: pg_sys::Relation) -> IcebergResult<Self> {
         Ok(IcebergModify)
     }
@@ -79,3 +79,4 @@ impl AmModify<IcebergError> for IcebergModify {
         Err(IcebergError::NotImplemented("tuple_lock"))
     }
 }
+

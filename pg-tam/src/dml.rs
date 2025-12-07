@@ -1,9 +1,9 @@
-//! Data modification callback wrappers for AmModify trait
+//! Data modification callback wrappers for AmDml trait
 //!
 //! This module provides wrapper functions for INSERT, UPDATE, DELETE operations
 //! with lazy initialization and automatic cleanup via memory context callbacks.
 
-use crate::api::AmModify;
+use crate::api::AmDml;
 use crate::data::Row;
 use crate::handles::{
     BulkInsertStateHandle, ItemPointer, SnapshotHandle, TM_FailureData,
@@ -29,7 +29,7 @@ thread_local! {
 extern "C-unwind" fn cleanup_modify_state<E, T>(arg: *mut ::core::ffi::c_void)
 where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     let relid = pg_sys::Oid::from(arg as usize as u32);
 
@@ -63,7 +63,7 @@ where
 fn get_or_create_session<E, T>(rel: pg_sys::Relation) -> Result<*mut ModifySession, E>
 where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     unsafe {
         let relid = (*rel).rd_id;
@@ -128,7 +128,7 @@ pub extern "C-unwind" fn tuple_insert<E, T>(
     bistate: *mut pg_sys::BulkInsertStateData,
 ) where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     unsafe {
         let session = get_or_create_session::<E, T>(rel).report_unwrap();
@@ -166,7 +166,7 @@ pub extern "C-unwind" fn tuple_insert_speculative<E, T>(
     _spec_token: u32,
 ) where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     unsafe {
         let session = get_or_create_session::<E, T>(rel).report_unwrap();
@@ -201,7 +201,7 @@ pub extern "C-unwind" fn tuple_complete_speculative<E, T>(
     succeeded: bool,
 ) where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     unsafe {
         let session = get_or_create_session::<E, T>(rel).report_unwrap();
@@ -230,7 +230,7 @@ pub extern "C-unwind" fn multi_insert<E, T>(
     bistate: *mut pg_sys::BulkInsertStateData,
 ) where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     unsafe {
         let session = get_or_create_session::<E, T>(rel).report_unwrap();
@@ -272,7 +272,7 @@ pub extern "C-unwind" fn tuple_delete<E, T>(
 ) -> pg_sys::TM_Result::Type
 where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     unsafe {
         let session = get_or_create_session::<E, T>(rel).report_unwrap();
@@ -321,7 +321,7 @@ pub extern "C-unwind" fn tuple_update<E, T>(
 ) -> pg_sys::TM_Result::Type
 where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     unsafe {
         let session = get_or_create_session::<E, T>(rel).report_unwrap();
@@ -374,7 +374,7 @@ pub extern "C-unwind" fn tuple_lock<E, T>(
 ) -> pg_sys::TM_Result::Type
 where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     unsafe {
         let session = get_or_create_session::<E, T>(rel).report_unwrap();
@@ -417,7 +417,7 @@ pub extern "C-unwind" fn finish_bulk_insert<E, T>(
     options: ::core::ffi::c_int,
 ) where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     unsafe {
         let relid = (*rel).rd_id;
@@ -455,7 +455,7 @@ pub extern "C-unwind" fn index_delete_tuples<E, T>(
 ) -> pg_sys::TransactionId
 where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     unsafe {
         // Try to get existing state, or create if needed (VACUUM typically runs as separate operation).
@@ -476,7 +476,7 @@ where
 pub fn register<E, T>(routine: &mut pg_sys::TableAmRoutine)
 where
     E: Into<ErrorReport>,
-    T: AmModify<E> + 'static,
+    T: AmDml<E> + 'static,
 {
     routine.tuple_insert = Some(tuple_insert::<E, T>);
     routine.tuple_insert_speculative = Some(tuple_insert_speculative::<E, T>);

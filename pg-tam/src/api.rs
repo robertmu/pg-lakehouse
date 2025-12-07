@@ -20,7 +20,7 @@ pub trait TableAccessMethod<E: Into<ErrorReport>> {
     type RelationState: AmRelation<E>;
     type IndexState: AmIndex<E>;
     type DdlState: AmDdl<E>;
-    type ModifyState: AmModify<E> + 'static;
+    type ModifyState: AmDml<E> + 'static;
 
     fn am_routine() -> TableAmRoutine
     where
@@ -327,7 +327,7 @@ pub trait AmIndex<E: Into<ErrorReport>> {
     }
 }
 
-pub trait AmModify<E: Into<ErrorReport>> {
+pub trait AmDml<E: Into<ErrorReport>> {
     fn new(rel: pg_sys::Relation) -> Result<Self, E>
     where
         Self: Sized;

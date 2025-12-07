@@ -2,8 +2,10 @@ use crate::utils::ReportableError;
 use pgrx::pg_sys;
 use pgrx::pg_sys::panic::ErrorReport;
 use pgrx::prelude::*;
+use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::rc::Rc;
+use std::sync::OnceLock;
 use thiserror::Error;
 
 /// Error type for utility hooks
@@ -43,21 +45,22 @@ impl<'a> UtilityNode<'a> {
     }
 }
 
-pub trait UtilityHook: Sync + Send {
+pub trait UtilityHook {
     fn on_pre(&self, context: &mut UtilityNode) -> Result<(), UtilityHookError>;
     fn on_post(&self, context: &mut UtilityNode) -> Result<(), UtilityHookError>;
 }
 
-static REGISTRY: RwLock<Vec<(pg_sys::NodeTag, Arc<dyn UtilityHook>)>> =
-    RwLock::new(Vec::new());
-static PREV_PROCESS_UTILITY: OnceLock<pg_sys::ProcessUtility_hook_type> =
-    OnceLock::new();
+thread_local! {
+    static REGISTRY: RefCell<Vec<(pg_sys::NodeTag, Rc<dyn UtilityHook>)>> =
+        RefCell::new(Vec::new());
+}
+
+static PREV_PROCESS_UTILITY: OnceLock<pg_sys::ProcessUtility_hook_type> = OnceLock::new();
 
 pub fn register_utility_hook(tag: pg_sys::NodeTag, hook: Box<dyn UtilityHook>) {
-    let mut lock = REGISTRY.write().expect(
-        "Lock poisoning should be impossible in a single-threaded Postgres backend",
-    );
-    lock.push((tag, Arc::from(hook)));
+    REGISTRY.with(|registry: &RefCell<Vec<(pg_sys::NodeTag, Rc<dyn UtilityHook + 'static>)>>| {
+        registry.borrow_mut().push((tag, Rc::from(hook)));
+    });
 
     PREV_PROCESS_UTILITY.get_or_init(|| unsafe {
         let prev = pg_sys::ProcessUtility_hook;
@@ -71,7 +74,7 @@ unsafe extern "C-unwind" fn process_utility_router(
     pstmt: *mut pg_sys::PlannedStmt,
     query_string: *const std::os::raw::c_char,
     read_only_tree: bool,
-    context: u32,
+    context: pg_sys::ProcessUtilityContext::Type,
     params: *mut pg_sys::ParamListInfoData,
     query_env: *mut pg_sys::QueryEnvironment,
     dest: *mut pg_sys::DestReceiver,
@@ -88,15 +91,13 @@ unsafe extern "C-unwind" fn process_utility_router(
     let mut safe_node = UtilityNode::new(target_node);
     let mut safe_node_copy = UtilityNode::new(copied_node);
 
-    {
-        let registry = REGISTRY.read()
-            .expect("Lock poisoning should be impossible in a single-threaded Postgres backend");
-        for (reg_tag, hook) in registry.iter() {
+    REGISTRY.with(|registry| {
+        for (reg_tag, hook) in registry.borrow().iter() {
             if *reg_tag == tag {
                 hook.on_pre(&mut safe_node).report_unwrap();
             }
         }
-    }
+    });
 
     // TODO: Consider wrapping these PG calls with PgTryBuilder to safely handle
     // longjmp (elog(ERROR)) and ensure Rust destructors (like safe_node_copy) are called properly.
@@ -128,13 +129,11 @@ unsafe extern "C-unwind" fn process_utility_router(
         }
     }
 
-    {
-        let registry = REGISTRY.read()
-            .expect("Lock poisoning should be impossible in a single-threaded Postgres backend");
-        for (reg_tag, hook) in registry.iter() {
+    REGISTRY.with(|registry| {
+        for (reg_tag, hook) in registry.borrow().iter() {
             if *reg_tag == tag {
                 hook.on_post(&mut safe_node_copy).report_unwrap();
             }
         }
-    }
+    });
 }

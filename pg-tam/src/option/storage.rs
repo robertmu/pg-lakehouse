@@ -7,6 +7,18 @@ use pgrx::pg_sys;
 use std::ffi::CStr;
 
 // ============================================================================
+//  Option Name Constants
+// ============================================================================
+pub const OPT_PROTOCOL: &str = "protocol";
+pub const OPT_BUCKET: &str = "bucket";
+pub const OPT_REGION: &str = "region";
+pub const OPT_ENDPOINT: &str = "endpoint";
+pub const OPT_ALLOW_HTTP: &str = "allow_http";
+pub const OPT_ACCESS_KEY_ID: &str = "access_key_id";
+pub const OPT_SECRET_ACCESS_KEY: &str = "secret_access_key";
+pub const OPT_IO_CONCURRENCY: &str = "io_concurrency";
+
+// ============================================================================
 //  Common Lakehouse Tablespace Option Definitions
 // ============================================================================
 
@@ -45,7 +57,7 @@ pub struct TamOptionDef {
 static STANDARD_STORAGE_OPTIONS: &[TamOptionDef] = &[
     // --- Common ---
     TamOptionDef {
-        name: "protocol",
+        name: OPT_PROTOCOL,
         category: StorageCategory::Common,
         kind: OptionKind::String {
             default: Some("s3"),
@@ -54,13 +66,13 @@ static STANDARD_STORAGE_OPTIONS: &[TamOptionDef] = &[
     },
     // --- S3 ---
     TamOptionDef {
-        name: "bucket",
+        name: OPT_BUCKET,
         category: StorageCategory::S3,
         kind: OptionKind::String { default: None },
         description: "S3 Bucket name",
     },
     TamOptionDef {
-        name: "region",
+        name: OPT_REGION,
         category: StorageCategory::S3,
         kind: OptionKind::String {
             default: Some("us-east-1"),
@@ -68,32 +80,32 @@ static STANDARD_STORAGE_OPTIONS: &[TamOptionDef] = &[
         description: "AWS Region",
     },
     TamOptionDef {
-        name: "endpoint",
+        name: OPT_ENDPOINT,
         category: StorageCategory::S3,
         kind: OptionKind::String { default: None },
         description: "Custom S3 Endpoint (for MinIO etc)",
     },
     TamOptionDef {
-        name: "allow_http",
+        name: OPT_ALLOW_HTTP,
         category: StorageCategory::S3,
         kind: OptionKind::Bool { default: false },
         description: "Allow HTTP connections (insecure)",
     },
     TamOptionDef {
-        name: "access_key_id",
+        name: OPT_ACCESS_KEY_ID,
         category: StorageCategory::S3,
         kind: OptionKind::String { default: None },
         description: "S3 Access Key ID",
     },
     TamOptionDef {
-        name: "secret_access_key",
+        name: OPT_SECRET_ACCESS_KEY,
         category: StorageCategory::S3,
         kind: OptionKind::String { default: None },
         description: "S3 Secret Access Key",
     },
     // --- FileSystem ---
     TamOptionDef {
-        name: "io_concurrency",
+        name: OPT_IO_CONCURRENCY,
         category: StorageCategory::FileSystem,
         kind: OptionKind::Int {
             default: 4,
@@ -245,7 +257,9 @@ fn validate_option_value(
     }
 }
 
-fn parse_bool(s: &str) -> Option<bool> {
+/// Parse a boolean value from a string, supporting various common formats.
+/// Returns `None` if the string is not a recognized boolean representation.
+pub fn parse_bool(s: &str) -> Option<bool> {
     let s = s.to_lowercase();
     match s.as_str() {
         "true" | "t" | "yes" | "y" | "on" | "1" => Some(true),

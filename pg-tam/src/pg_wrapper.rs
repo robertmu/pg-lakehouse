@@ -201,4 +201,54 @@ impl PgWrapper {
             .execute()
         }
     }
+
+    /// Wrapper for `pg_sys::SearchSysCache1` with error handling.
+    ///
+    /// Returns `Ok(None)` if the tuple is not found, `Ok(Some(tuple))` if found.
+    /// The caller is responsible for calling `release_sys_cache` when done.
+    pub fn search_sys_cache1(
+        cache_id: i32,
+        key1: pg_sys::Datum,
+    ) -> Result<Option<pg_sys::HeapTuple>, PgWrapperError> {
+        unsafe {
+            PgTryBuilder::new(move || {
+                let tuple = pg_sys::SearchSysCache1(cache_id, key1);
+                Ok(if tuple.is_null() { None } else { Some(tuple) })
+            })
+            .catch_others(|err| {
+                Err(PgWrapperError::PostgresError(format!("{:?}", err)))
+            })
+            .execute()
+        }
+    }
+
+    /// Wrapper for `pg_sys::ReleaseSysCache` with error handling.
+    pub fn release_sys_cache(tuple: pg_sys::HeapTuple) -> Result<(), PgWrapperError> {
+        let tuple = AssertUnwindSafe(tuple);
+        unsafe {
+            PgTryBuilder::new(move || {
+                pg_sys::ReleaseSysCache(*tuple);
+                Ok(())
+            })
+            .catch_others(|err| {
+                Err(PgWrapperError::PostgresError(format!("{:?}", err)))
+            })
+            .execute()
+        }
+    }
+}
+
+// Manually declare CacheRegisterSyscacheCallback because it is not in pg_sys
+extern "C" {
+    pub fn CacheRegisterSyscacheCallback(
+        cacheid: std::os::raw::c_int,
+        func: Option<
+            unsafe extern "C" fn(
+                arg: pg_sys::Datum,
+                cacheid: std::os::raw::c_int,
+                hashvalue: u32,
+            ),
+        >,
+        arg: pg_sys::Datum,
+    );
 }

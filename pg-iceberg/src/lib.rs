@@ -8,7 +8,7 @@ pub mod error;
 pub mod hooks;
 use access::ddl::IcebergDdl;
 use access::index::IcebergIndex;
-use access::modify::IcebergModify;
+use access::dml::IcebergModify;
 use access::relation::IcebergRelation;
 use access::scan::IcebergScan;
 
