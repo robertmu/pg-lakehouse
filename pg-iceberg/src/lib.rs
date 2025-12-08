@@ -6,6 +6,9 @@ use std::sync::OnceLock;
 mod access;
 pub mod error;
 pub mod hooks;
+
+/// The access method name for Iceberg tables.
+pub const ICEBERG_AM_NAME: &str = "iceberg";
 use access::ddl::IcebergDdl;
 use access::index::IcebergIndex;
 use access::dml::IcebergModify;

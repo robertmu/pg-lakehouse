@@ -11,7 +11,7 @@ resolver = "2"
 version = "0.1.0"
 license = "Apache-2.0"
 edition = "2021"
-rust-version = "1.85.1"
+rust-version = "1.90.0"
 homepage = "https://github.com/robertmu/pg-lakehouse"
 repository = "https://github.com/robertmu/pg-lakehouse"
 

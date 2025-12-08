@@ -44,6 +44,10 @@ pub enum OptionKind {
     String {
         default: Option<&'static str>,
     },
+    Enum {
+        default: &'static str,
+        values: &'static [&'static str],
+    },
 }
 
 pub struct TamOptionDef {
@@ -253,6 +257,17 @@ fn validate_option_value(
                 // If user provided the key without value (arg is NULL), use default if present
                 Ok(default.map(|s| s.to_string()))
             }
+        }
+        OptionKind::Enum { default, values } => {
+            let val = raw_val.unwrap_or_else(|| default.to_string());
+            if !values.contains(&val.as_str()) {
+                return Err(format!(
+                    "invalid value \"{}\". Allowed values are: {}",
+                    val,
+                    values.join(", ")
+                ));
+            }
+            Ok(Some(val))
         }
     }
 }

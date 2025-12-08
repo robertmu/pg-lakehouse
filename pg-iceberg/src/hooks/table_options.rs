@@ -1,3 +1,4 @@
+use crate::ICEBERG_AM_NAME;
 use pg_tam::option::{OptionKind, StorageCategory, TamOptionDef};
 use pg_tam::pg_wrapper::PgWrapper;
 use pg_tam::prelude::*;
@@ -22,17 +23,31 @@ static ICEBERG_TABLE_OPTIONS: &[TamOptionDef] = &[
         kind: OptionKind::String {
             default: Some("zstd"),
         },
-        description: "Parquet compression codec (snappy, gzip, zstd, lz4, none)",
+        description: "Parquet compression codec (snappy, zstd)",
     },
     TamOptionDef {
-        name: "write.metadata.delete-after-commit.enabled",
+        name: "write.format.default",
         category: StorageCategory::Common,
-        kind: OptionKind::Bool { default: false },
-        description: "Delete previous metadata files after commit",
+        kind: OptionKind::Enum {
+            default: "parquet",
+            values: &["parquet", "avro", "orc"],
+        },
+        description: "Default file format (parquet, avro, orc)",
     },
 ];
 
 struct IcebergTableHook;
+
+/// Check if the CREATE TABLE statement uses the 'iceberg' access method.
+fn is_iceberg_access_method(stmt: &pg_sys::CreateStmt) -> bool {
+    unsafe {
+        let am = stmt.accessMethod;
+        if am.is_null() {
+            return false;
+        }
+        CStr::from_ptr(am).to_string_lossy() == ICEBERG_AM_NAME
+    }
+}
 
 impl UtilityHook for IcebergTableHook {
     fn on_pre(&self, context: &mut UtilityNode) -> Result<(), UtilityHookError> {
@@ -40,16 +55,8 @@ impl UtilityHook for IcebergTableHook {
             .is_a_mut::<pg_sys::CreateStmt>(pg_sys::NodeTag::T_CreateStmt)
             .expect("Hook registered for T_CreateStmt");
 
-        unsafe {
-            // Check if this CREATE TABLE is using the 'iceberg' access method.
-            let am = stmt.accessMethod;
-            if am.is_null() {
-                return Ok(());
-            }
-            let am_name = CStr::from_ptr(am).to_string_lossy();
-            if am_name != "iceberg" {
-                return Ok(());
-            }
+        if !is_iceberg_access_method(stmt) {
+            return Ok(());
         }
 
         // Extract and validate options (but don't persist yet, just validate)
@@ -64,16 +71,8 @@ impl UtilityHook for IcebergTableHook {
             .is_a_mut::<pg_sys::CreateStmt>(pg_sys::NodeTag::T_CreateStmt)
             .expect("Hook registered for T_CreateStmt");
 
-        unsafe {
-            // Check if this CREATE TABLE is using the 'iceberg' access method.
-            let am = stmt.accessMethod;
-            if am.is_null() {
-                return Ok(());
-            }
-            let am_name = CStr::from_ptr(am).to_string_lossy();
-            if am_name != "iceberg" {
-                return Ok(());
-            }
+        if !is_iceberg_access_method(stmt) {
+            return Ok(());
         }
 
         if let Ok(Some(opts)) = TableOptions::extract_from_stmt(stmt, Some(ICEBERG_TABLE_OPTIONS)) {

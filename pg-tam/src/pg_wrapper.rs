@@ -236,6 +236,82 @@ impl PgWrapper {
             .execute()
         }
     }
+
+    pub fn systable_beginscan(
+        heap_relation: pg_sys::Relation,
+        index_id: pg_sys::Oid,
+        index_ok: bool,
+        snapshot: pg_sys::Snapshot,
+        nkeys: i32,
+        key: pg_sys::ScanKey,
+    ) -> Result<pg_sys::SysScanDesc, PgWrapperError> {
+        let heap_relation = AssertUnwindSafe(heap_relation);
+        unsafe {
+            PgTryBuilder::new(move || {
+                Ok(pg_sys::systable_beginscan(
+                    *heap_relation,
+                    index_id,
+                    index_ok,
+                    snapshot,
+                    nkeys,
+                    key,
+                ))
+            })
+            .catch_others(|err| {
+                Err(PgWrapperError::PostgresError(format!("{:?}", err)))
+            })
+            .execute()
+        }
+    }
+
+    pub fn systable_getnext(
+        sysscan: pg_sys::SysScanDesc,
+    ) -> Result<Option<pg_sys::HeapTuple>, PgWrapperError> {
+        let sysscan = AssertUnwindSafe(sysscan);
+        unsafe {
+            PgTryBuilder::new(move || {
+                let tuple = pg_sys::systable_getnext(*sysscan);
+                Ok(if tuple.is_null() { None } else { Some(tuple) })
+            })
+            .catch_others(|err| {
+                Err(PgWrapperError::PostgresError(format!("{:?}", err)))
+            })
+            .execute()
+        }
+    }
+
+    pub fn systable_endscan(sysscan: pg_sys::SysScanDesc) -> Result<(), PgWrapperError> {
+        let sysscan = AssertUnwindSafe(sysscan);
+        unsafe {
+            PgTryBuilder::new(move || {
+                pg_sys::systable_endscan(*sysscan);
+                Ok(())
+            })
+            .catch_others(|err| {
+                Err(PgWrapperError::PostgresError(format!("{:?}", err)))
+            })
+            .execute()
+        }
+    }
+
+    /// Rust wrapper for the C macro `ScanKeyInit`.
+    ///
+    /// Initializes a `ScanKeyData` structure and looks up the function via `fmgr_info`.
+    pub unsafe fn scan_key_init(
+        entry: *mut pg_sys::ScanKeyData,
+        attribute_number: pg_sys::AttrNumber,
+        strategy: u16,
+        procedure: pg_sys::RegProcedure,
+        argument: pg_sys::Datum,
+    ) {
+        (*entry).sk_flags = 0;
+        (*entry).sk_attno = attribute_number;
+        (*entry).sk_strategy = strategy;
+        (*entry).sk_subtype = pg_sys::InvalidOid;
+        (*entry).sk_collation = pg_sys::InvalidOid;
+        (*entry).sk_argument = argument;
+        pg_sys::fmgr_info(procedure, &mut (*entry).sk_func);
+    }
 }
 
 // Manually declare CacheRegisterSyscacheCallback because it is not in pg_sys

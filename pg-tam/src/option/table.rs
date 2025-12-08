@@ -9,7 +9,7 @@ use crate::pg_wrapper::PgWrapper;
 use pgrx::pg_sys;
 use pgrx::pg_sys::panic::ErrorReport;
 use pgrx::prelude::PgSqlErrorCode;
-use pgrx::IntoDatum;
+use pgrx::{FromDatum, IntoDatum};
 use thiserror::Error;
 
 // ============================================================================
@@ -23,6 +23,8 @@ pub enum TableOptionError {
     InvalidOption(String),
     #[error("failed to persist table options: {0}")]
     PersistFailed(String),
+    #[error("failed to load table options: {0}")]
+    LoadFailed(String),
 }
 
 impl From<TableOptionError> for ErrorReport {
@@ -49,6 +51,21 @@ pub struct TableOptions {
 impl TableOptions {
     pub fn new(options: Vec<(String, Option<String>)>) -> Self {
         Self { options }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &Option<String>)> {
+        self.options.iter().map(|(k, v)| (k, v))
+    }
+
+    pub fn get_str(&self, key: &str) -> Option<String> {
+        self.options
+            .iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| v.clone())
+    }
+
+    pub fn get_int(&self, key: &str) -> Option<i32> {
+        self.get_str(key).and_then(|v| v.parse().ok())
     }
 
     pub fn extract_from_stmt(
@@ -116,5 +133,73 @@ impl TableOptions {
         }
 
         Ok(())
+    }
+
+    pub fn load_from_catalog(
+        relid: pg_sys::Oid,
+    ) -> Result<Option<Self>, TableOptionError> {
+        let table_oid = catalog::get_table_options_oid()
+            .map_err(|e| TableOptionError::LoadFailed(e.to_string()))?;
+        let index_oid = catalog::get_table_options_pkey_oid()
+            .map_err(|e| TableOptionError::LoadFailed(e.to_string()))?;
+
+        unsafe {
+            let rel = PgWrapper::table_open(table_oid, pg_sys::AccessShareLock as _)
+                .map_err(|e| TableOptionError::LoadFailed(e.to_string()))?;
+
+            let mut key: pg_sys::ScanKeyData = std::mem::zeroed();
+
+            PgWrapper::scan_key_init(
+                &mut key,
+                1, // relid column
+                pg_sys::BTEqualStrategyNumber as _,
+                pg_sys::Oid::from(pg_sys::F_OIDEQ),
+                relid.into_datum().unwrap(),
+            );
+
+            let scan = PgWrapper::systable_beginscan(
+                rel,
+                index_oid,
+                true,
+                std::ptr::null_mut(),
+                1,
+                &key as *const _ as *mut _,
+            )
+            .map_err(|e| TableOptionError::LoadFailed(e.to_string()))?;
+
+            let tuple = PgWrapper::systable_getnext(scan)
+                .map_err(|e| TableOptionError::LoadFailed(e.to_string()))?;
+            let mut result = None;
+
+            if let Some(tuple) = tuple {
+                let tup_desc = (*rel).rd_att;
+                let mut is_null = false;
+                // options is column 2
+                let datum = pg_sys::heap_getattr(tuple, 2, tup_desc, &mut is_null);
+
+                if !is_null {
+                    let options_vec = Vec::<String>::from_datum(datum, is_null);
+                    if let Some(options) = options_vec {
+                        let parsed: Vec<(String, Option<String>)> = options
+                            .into_iter()
+                            .map(|s| {
+                                let mut parts = s.splitn(2, '=');
+                                let key = parts.next().unwrap_or("").to_string();
+                                let val = parts.next().map(|v| v.to_string());
+                                (key, val)
+                            })
+                            .collect();
+                        result = Some(Self { options: parsed });
+                    }
+                }
+            }
+
+            PgWrapper::systable_endscan(scan)
+                .map_err(|e| TableOptionError::LoadFailed(e.to_string()))?;
+            PgWrapper::table_close(rel, pg_sys::AccessShareLock as _)
+                .map_err(|e| TableOptionError::LoadFailed(e.to_string()))?;
+
+            Ok(result)
+        }
     }
 }

@@ -47,7 +47,7 @@ CREATE TABLE iceberg_multi_opts_test (
 ) USING iceberg WITH (
     "format-version" = 2,
     "write.parquet.compression-codec" = 'zstd',
-    "write.metadata.delete-after-commit.enabled" = true
+    "write.format.default" = 'orc'
 );
 
 -- Verify all options are stored correctly
@@ -75,20 +75,20 @@ WHERE relid = 'iceberg_compression_test'::regclass;
 DROP TABLE iceberg_compression_test;
 
 -- ============================================================================
--- Test 5: Create table with boolean option
+-- Test 5: Create table with enum option
 -- ============================================================================
-CREATE TABLE iceberg_bool_opt_test (
+CREATE TABLE iceberg_enum_opt_test (
     id integer
 ) USING iceberg WITH (
-    "write.metadata.delete-after-commit.enabled" = false
+    "write.format.default" = 'avro'
 );
 
--- Verify the boolean option
+-- Verify the enum option
 SELECT relid::regclass::text AS table_name, options
 FROM lakehouse.table_options
-WHERE relid = 'iceberg_bool_opt_test'::regclass;
+WHERE relid = 'iceberg_enum_opt_test'::regclass;
 
-DROP TABLE iceberg_bool_opt_test;
+DROP TABLE iceberg_enum_opt_test;
 
 -- ============================================================================
 -- Test 6: Create table in a specific schema
