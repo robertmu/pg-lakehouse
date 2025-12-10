@@ -280,7 +280,9 @@ impl PgWrapper {
         }
     }
 
-    pub fn systable_endscan(sysscan: pg_sys::SysScanDesc) -> Result<(), PgWrapperError> {
+    pub fn systable_endscan(
+        sysscan: pg_sys::SysScanDesc,
+    ) -> Result<(), PgWrapperError> {
         let sysscan = AssertUnwindSafe(sysscan);
         unsafe {
             PgTryBuilder::new(move || {

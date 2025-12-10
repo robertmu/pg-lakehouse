@@ -12,7 +12,7 @@ impl UtilityHook for IcebergTablespaceHook {
             .expect("Hook registered for T_CreateTableSpaceStmt but received different node type");
 
         TablespaceOptions::extract_from_stmt(stmt).map_err(|e| {
-            UtilityHookError::Internal(format!("tablespace: option extraction failed - {}", e))
+            UtilityHookError::Message(format!("tablespace: option extraction failed - {}", e))
         })?;
         Ok(())
     }
@@ -25,13 +25,13 @@ impl UtilityHook for IcebergTablespaceHook {
         if let Ok(Some(opts)) = TablespaceOptions::extract_from_stmt(stmt) {
             let spcname = unsafe { CStr::from_ptr(stmt.tablespacename) };
             let oid = PgWrapper::get_tablespace_oid(spcname, false).map_err(|e| {
-                UtilityHookError::Internal(format!(
+                UtilityHookError::Message(format!(
                     "tablespace: failed to get tablespace OID - {}",
                     e
                 ))
             })?;
             opts.persist_to_catalog(oid).map_err(|e| {
-                UtilityHookError::Internal(format!(
+                UtilityHookError::Message(format!(
                     "tablespace: failed to persist options to catalog - {}",
                     e
                 ))

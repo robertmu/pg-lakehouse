@@ -61,7 +61,7 @@ impl UtilityHook for IcebergTableHook {
 
         // Extract and validate options (but don't persist yet, just validate)
         TableOptions::extract_from_stmt(stmt, Some(ICEBERG_TABLE_OPTIONS)).map_err(|e| {
-            UtilityHookError::Internal(format!("table: option extraction failed - {}", e))
+            UtilityHookError::Message(format!("table: option extraction failed - {}", e))
         })?;
         Ok(())
     }
@@ -84,11 +84,11 @@ impl UtilityHook for IcebergTableHook {
                 false, // fail if missing (shouldn't happen in on_post of CreateStmt)
             )
             .map_err(|e| {
-                UtilityHookError::Internal(format!("table: failed to get table OID - {}", e))
+                UtilityHookError::Message(format!("table: failed to get table OID - {}", e))
             })?;
 
             opts.persist_to_catalog(oid).map_err(|e| {
-                UtilityHookError::Internal(format!(
+                UtilityHookError::Message(format!(
                     "table: failed to persist options to catalog - {}",
                     e
                 ))

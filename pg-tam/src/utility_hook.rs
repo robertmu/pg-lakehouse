@@ -11,8 +11,8 @@ use thiserror::Error;
 /// Error type for utility hooks
 #[derive(Error, Debug)]
 pub enum UtilityHookError {
-    #[error("utility hook error: {0}")]
-    Internal(String),
+    #[error("{0}")]
+    Message(String),
 }
 
 impl From<UtilityHookError> for ErrorReport {
@@ -55,12 +55,17 @@ thread_local! {
         RefCell::new(Vec::new());
 }
 
-static PREV_PROCESS_UTILITY: OnceLock<pg_sys::ProcessUtility_hook_type> = OnceLock::new();
+static PREV_PROCESS_UTILITY: OnceLock<pg_sys::ProcessUtility_hook_type> =
+    OnceLock::new();
 
 pub fn register_utility_hook(tag: pg_sys::NodeTag, hook: Box<dyn UtilityHook>) {
-    REGISTRY.with(|registry: &RefCell<Vec<(pg_sys::NodeTag, Rc<dyn UtilityHook + 'static>)>>| {
-        registry.borrow_mut().push((tag, Rc::from(hook)));
-    });
+    REGISTRY.with(
+        |registry: &RefCell<
+            Vec<(pg_sys::NodeTag, Rc<dyn UtilityHook + 'static>)>,
+        >| {
+            registry.borrow_mut().push((tag, Rc::from(hook)));
+        },
+    );
 
     PREV_PROCESS_UTILITY.get_or_init(|| unsafe {
         let prev = pg_sys::ProcessUtility_hook;

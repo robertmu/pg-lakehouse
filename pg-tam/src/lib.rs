@@ -33,20 +33,8 @@ pub mod handles;
 /// PostgreSQL data types (Cell, Row)
 pub mod data;
 
-/// Sequential and bitmap scan operations
-pub mod scan;
-
-/// Index fetch operations
-pub mod index;
-
-/// Tuple modification operations (insert, update, delete)
-pub mod dml;
-
-/// DDL operations (CREATE, TRUNCATE, etc.)
-pub mod ddl;
-
-/// Relation metadata and utility operations
-pub mod relation;
+/// Table access implementation modules (scan, index, dml, ddl, relation)
+pub mod access;
 
 /// Registration logic for Table Access Method routines
 pub mod registry;

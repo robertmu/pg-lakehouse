@@ -1,5 +1,5 @@
 pub mod ddl;
-pub mod index;
 pub mod dml;
+pub mod index;
 pub mod relation;
 pub mod scan;

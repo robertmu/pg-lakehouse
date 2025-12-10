@@ -85,8 +85,6 @@ impl TablespaceOptions {
             let tuple = match tuple {
                 Some(t) => t,
                 None => {
-                    PgWrapper::table_close(rel, pg_sys::RowExclusiveLock as _)
-                        .map_err(|e| TablespaceError::UpdateFailed(e.to_string()))?;
                     return Err(TablespaceError::UpdateFailed(format!(
                         "Tablespace {} not found",
                         spcoid

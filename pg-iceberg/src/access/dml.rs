@@ -79,4 +79,3 @@ impl AmDml<IcebergError> for IcebergModify {
         Err(IcebergError::NotImplemented("tuple_lock"))
     }
 }
-

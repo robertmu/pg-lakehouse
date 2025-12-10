@@ -158,14 +158,12 @@ unsafe extern "C" fn invalidate_tablespace_cache_callback(
 
 /// Initialize the cache and register the callback
 fn initialize_tablespace_cache() {
-    INIT.call_once(|| {
-        unsafe {
-            CacheRegisterSyscacheCallback(
-                pg_sys::SysCacheIdentifier::TABLESPACEOID as i32,
-                Some(invalidate_tablespace_cache_callback),
-                0.into(),
-            );
-        }
+    INIT.call_once(|| unsafe {
+        CacheRegisterSyscacheCallback(
+            pg_sys::SysCacheIdentifier::TABLESPACEOID as i32,
+            Some(invalidate_tablespace_cache_callback),
+            0.into(),
+        );
     });
 }
 
@@ -218,7 +216,9 @@ fn lookup_tablespace_options(
 
     let tp = PgWrapper::search_sys_cache1(
         cache_id,
-        spcid.into_datum().expect("Failed to convert spcid Oid to Datum"),
+        spcid
+            .into_datum()
+            .expect("Failed to convert spcid Oid to Datum"),
     )?;
 
     let Some(tp) = tp else {
@@ -276,7 +276,9 @@ fn parse_options_to_cached(options_vec: Vec<String>) -> CachedTableSpaceOpts {
         "s3" => StorageOptions::S3(parse_s3_options(&opts_map)),
         "gcs" => StorageOptions::Gcs(parse_gcs_options(&opts_map)),
         "azure" => StorageOptions::Azure(parse_azure_options(&opts_map)),
-        "fs" | "file" | "filesystem" => StorageOptions::FileSystem(parse_fs_options(&opts_map)),
+        "fs" | "file" | "filesystem" => {
+            StorageOptions::FileSystem(parse_fs_options(&opts_map))
+        }
         unknown => panic!("unexpected storage protocol: {}", unknown),
     };
 

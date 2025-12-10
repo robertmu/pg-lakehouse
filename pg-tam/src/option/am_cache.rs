@@ -85,7 +85,9 @@ impl AmCache {
         let rel_ptr = rel.as_raw();
         unsafe {
             if rel_ptr.is_null() {
-                return Err(TableOptionError::PersistFailed("Relation is null".to_string()));
+                return Err(TableOptionError::PersistFailed(
+                    "Relation is null".to_string(),
+                ));
             }
 
             // Fast path: Check if cache is already populated

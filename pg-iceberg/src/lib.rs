@@ -10,8 +10,8 @@ pub mod hooks;
 /// The access method name for Iceberg tables.
 pub const ICEBERG_AM_NAME: &str = "iceberg";
 use access::ddl::IcebergDdl;
-use access::index::IcebergIndex;
 use access::dml::IcebergModify;
+use access::index::IcebergIndex;
 use access::relation::IcebergRelation;
 use access::scan::IcebergScan;
 
