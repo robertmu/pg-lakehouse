@@ -25,6 +25,7 @@ pg_test = []
 [dependencies]
 pgrx = { workspace = true }
 pg-tam = { path = "../pg-tam" }
+iceberg-lite = { path = "../iceberg-lite" }
 thiserror = "1.0"
 serde_json = "1.0"
 arrow-schema = "52"
@@ -38,9 +39,6 @@ rustls = "0.23.27"
 
 uuid = { version = "1.16.0" }
 
-iceberg = { version = "0.5.1" }
-iceberg-catalog-s3tables = { git = "https://github.com/burmecia/iceberg-rust", rev = "e565bc43c1b9fa6b25a601f68bcec1423a984cc1", package="iceberg-catalog-s3tables", optional = true }
-iceberg-catalog-rest = { version = "0.5.1", optional = true }
 rust_decimal = { version = "1.37.1" }
 
 [dev-dependencies]

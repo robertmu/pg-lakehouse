@@ -39,7 +39,7 @@ pub enum IcebergError {
     NumericError(#[from] pgrx::datum::numeric_support::error::Error),
 
     #[error("iceberg error: {0}")]
-    IcebergError(#[from] iceberg::Error),
+    IcebergError(#[from] iceberg_lite::Error),
 
     #[error("arrow error: {0}")]
     ArrowError(#[from] arrow_schema::ArrowError),

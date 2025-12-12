@@ -3,6 +3,7 @@ members = [
     "pg-tam",
     "pg-tam-macros",
     "pg-iceberg",
+    "iceberg-lite",
 ]
 resolver = "2"
 
@@ -10,7 +11,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.90.0"
 homepage = "https://github.com/robertmu/pg-lakehouse"
 repository = "https://github.com/robertmu/pg-lakehouse"
@@ -22,7 +23,7 @@ pgrx-tests = { version = "=0.16.0"}
 # The 'dev' profile is used when you run `cargo build`.
 [profile.dev]
 panic = "unwind"
-lto = "thin"
+lto = false
 
 # The 'release' profile is used for production builds with `cargo build --release`.
 [profile.release]

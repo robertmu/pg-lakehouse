@@ -1,5 +1,5 @@
-use pgrx::pg_sys;
 use pgrx::PgTryBuilder;
+use pgrx::pg_sys;
 use std::ffi::CStr;
 use std::panic::AssertUnwindSafe;
 use thiserror::Error;
@@ -317,7 +317,7 @@ impl PgWrapper {
 }
 
 // Manually declare CacheRegisterSyscacheCallback because it is not in pg_sys
-extern "C" {
+unsafe extern "C" {
     pub fn CacheRegisterSyscacheCallback(
         cacheid: std::os::raw::c_int,
         func: Option<
