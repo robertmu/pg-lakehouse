@@ -20,10 +20,12 @@ pub fn append_string(data: &mut Vec<u8>, header_size: usize, s: &str) -> u32 {
 /// # Safety
 /// The `base_ptr` must be valid, and `offset` must be within the allocated block.
 pub unsafe fn get_string_at_offset<'a>(base_ptr: *const u8, offset: u32) -> &'a str {
-    if offset == 0 {
-        return "";
+    unsafe {
+        if offset == 0 {
+            return "";
+        }
+        let ptr = base_ptr.add(offset as usize);
+        let c_str = CStr::from_ptr(ptr as *const i8);
+        c_str.to_str().unwrap_or("")
     }
-    let ptr = base_ptr.add(offset as usize);
-    let c_str = CStr::from_ptr(ptr as *const i8);
-    c_str.to_str().unwrap_or("")
 }

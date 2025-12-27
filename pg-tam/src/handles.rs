@@ -37,20 +37,24 @@ pub struct RelFileLocator {
 impl RelFileLocator {
     #[inline]
     pub unsafe fn from_raw_unchecked(ptr: *const pg_sys::RelFileLocator) -> Self {
-        let sys = &*ptr;
-        Self {
-            spc_oid: sys.spcOid,
-            db_oid: sys.dbOid,
-            rel_number: sys.relNumber,
+        unsafe {
+            let sys = &*ptr;
+            Self {
+                spc_oid: sys.spcOid,
+                db_oid: sys.dbOid,
+                rel_number: sys.relNumber,
+            }
         }
     }
 
     #[inline]
     pub unsafe fn from_raw(ptr: *const pg_sys::RelFileLocator) -> Option<Self> {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(Self::from_raw_unchecked(ptr))
+        unsafe {
+            if ptr.is_null() {
+                None
+            } else {
+                Some(Self::from_raw_unchecked(ptr))
+            }
         }
     }
 }
@@ -119,12 +123,14 @@ pub struct ItemPointer {
 impl ItemPointer {
     #[inline]
     pub unsafe fn from_raw(ptr: pg_sys::ItemPointer) -> Self {
-        let sys = *ptr;
-        let block_number =
-            (sys.ip_blkid.bi_hi as u32) << 16 | (sys.ip_blkid.bi_lo as u32);
-        Self {
-            block_number,
-            offset: sys.ip_posid,
+        unsafe {
+            let sys = *ptr;
+            let block_number =
+                (sys.ip_blkid.bi_hi as u32) << 16 | (sys.ip_blkid.bi_lo as u32);
+            Self {
+                block_number,
+                offset: sys.ip_posid,
+            }
         }
     }
 
@@ -180,7 +186,7 @@ pub struct VacuumParamsHandle<'a> {
 impl<'a> VacuumParamsHandle<'a> {
     #[inline]
     pub unsafe fn from_raw(ptr: *mut pg_sys::VacuumParams) -> Self {
-        Self { inner: &mut *ptr }
+        unsafe { Self { inner: &mut *ptr } }
     }
 
     #[inline]
@@ -198,12 +204,14 @@ pub struct AttrWidthsHandle<'a> {
 impl<'a> AttrWidthsHandle<'a> {
     #[inline]
     pub unsafe fn from_raw(ptr: *mut i32, len: usize) -> Option<Self> {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(Self {
-                inner: std::slice::from_raw_parts_mut(ptr, len),
-            })
+        unsafe {
+            if ptr.is_null() {
+                None
+            } else {
+                Some(Self {
+                    inner: std::slice::from_raw_parts_mut(ptr, len),
+                })
+            }
         }
     }
 
@@ -527,11 +535,13 @@ pub struct TM_FailureData {
 impl TM_FailureData {
     #[inline]
     pub unsafe fn write_to_ptr(&self, ptr: *mut pg_sys::TM_FailureData) {
-        if !ptr.is_null() {
-            (*ptr).ctid = self.ctid.to_pg_sys();
-            (*ptr).xmax = self.xmax;
-            (*ptr).cmax = self.cmax;
-            (*ptr).traversed = self.traversed;
+        unsafe {
+            if !ptr.is_null() {
+                (*ptr).ctid = self.ctid.to_pg_sys();
+                (*ptr).xmax = self.xmax;
+                (*ptr).cmax = self.cmax;
+                (*ptr).traversed = self.traversed;
+            }
         }
     }
 }

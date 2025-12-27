@@ -306,13 +306,15 @@ impl PgWrapper {
         procedure: pg_sys::RegProcedure,
         argument: pg_sys::Datum,
     ) {
-        (*entry).sk_flags = 0;
-        (*entry).sk_attno = attribute_number;
-        (*entry).sk_strategy = strategy;
-        (*entry).sk_subtype = pg_sys::InvalidOid;
-        (*entry).sk_collation = pg_sys::InvalidOid;
-        (*entry).sk_argument = argument;
-        pg_sys::fmgr_info(procedure, &mut (*entry).sk_func);
+        unsafe {
+            (*entry).sk_flags = 0;
+            (*entry).sk_attno = attribute_number;
+            (*entry).sk_strategy = strategy;
+            (*entry).sk_subtype = pg_sys::InvalidOid;
+            (*entry).sk_collation = pg_sys::InvalidOid;
+            (*entry).sk_argument = argument;
+            pg_sys::fmgr_info(procedure, &mut (*entry).sk_func);
+        }
     }
 }
 

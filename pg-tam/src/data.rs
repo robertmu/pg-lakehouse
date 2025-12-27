@@ -274,82 +274,84 @@ impl FromDatum for Cell {
     where
         Self: Sized,
     {
-        let oid = PgOid::from(typoid);
-        match oid {
-            PgOid::BuiltIn(PgBuiltInOids::BOOLOID) => {
-                bool::from_datum(datum, is_null).map(Cell::Bool)
+        unsafe {
+            let oid = PgOid::from(typoid);
+            match oid {
+                PgOid::BuiltIn(PgBuiltInOids::BOOLOID) => {
+                    bool::from_datum(datum, is_null).map(Cell::Bool)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::CHAROID) => {
+                    i8::from_datum(datum, is_null).map(Cell::I8)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::INT2OID) => {
+                    i16::from_datum(datum, is_null).map(Cell::I16)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::FLOAT4OID) => {
+                    f32::from_datum(datum, is_null).map(Cell::F32)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::INT4OID) => {
+                    i32::from_datum(datum, is_null).map(Cell::I32)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::FLOAT8OID) => {
+                    f64::from_datum(datum, is_null).map(Cell::F64)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::INT8OID) => {
+                    i64::from_datum(datum, is_null).map(Cell::I64)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::NUMERICOID) => {
+                    AnyNumeric::from_datum(datum, is_null).map(Cell::Numeric)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::TEXTOID) => {
+                    String::from_datum(datum, is_null).map(Cell::String)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::DATEOID) => {
+                    Date::from_datum(datum, is_null).map(Cell::Date)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::TIMEOID) => {
+                    Time::from_datum(datum, is_null).map(Cell::Time)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::TIMESTAMPOID) => {
+                    Timestamp::from_datum(datum, is_null).map(Cell::Timestamp)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::TIMESTAMPTZOID) => {
+                    TimestampWithTimeZone::from_datum(datum, is_null)
+                        .map(Cell::Timestamptz)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::INTERVALOID) => {
+                    Interval::from_datum(datum, is_null).map(Cell::Interval)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::JSONBOID) => {
+                    JsonB::from_datum(datum, is_null).map(Cell::Json)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::BYTEAOID) => {
+                    Some(Cell::Bytea(datum.cast_mut_ptr::<bytea>()))
+                }
+                PgOid::BuiltIn(PgBuiltInOids::UUIDOID) => {
+                    Uuid::from_datum(datum, is_null).map(Cell::Uuid)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::BOOLARRAYOID) => {
+                    Vec::<Option<bool>>::from_datum(datum, false).map(Cell::BoolArray)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::INT2ARRAYOID) => {
+                    Vec::<Option<i16>>::from_datum(datum, false).map(Cell::I16Array)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::INT4ARRAYOID) => {
+                    Vec::<Option<i32>>::from_datum(datum, false).map(Cell::I32Array)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::INT8ARRAYOID) => {
+                    Vec::<Option<i64>>::from_datum(datum, false).map(Cell::I64Array)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::FLOAT4ARRAYOID) => {
+                    Vec::<Option<f32>>::from_datum(datum, false).map(Cell::F32Array)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::FLOAT8ARRAYOID) => {
+                    Vec::<Option<f64>>::from_datum(datum, false).map(Cell::F64Array)
+                }
+                PgOid::BuiltIn(PgBuiltInOids::TEXTARRAYOID) => {
+                    Vec::<Option<String>>::from_datum(datum, false).map(Cell::StringArray)
+                }
+                _ => None,
             }
-            PgOid::BuiltIn(PgBuiltInOids::CHAROID) => {
-                i8::from_datum(datum, is_null).map(Cell::I8)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::INT2OID) => {
-                i16::from_datum(datum, is_null).map(Cell::I16)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::FLOAT4OID) => {
-                f32::from_datum(datum, is_null).map(Cell::F32)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::INT4OID) => {
-                i32::from_datum(datum, is_null).map(Cell::I32)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::FLOAT8OID) => {
-                f64::from_datum(datum, is_null).map(Cell::F64)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::INT8OID) => {
-                i64::from_datum(datum, is_null).map(Cell::I64)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::NUMERICOID) => {
-                AnyNumeric::from_datum(datum, is_null).map(Cell::Numeric)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::TEXTOID) => {
-                String::from_datum(datum, is_null).map(Cell::String)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::DATEOID) => {
-                Date::from_datum(datum, is_null).map(Cell::Date)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::TIMEOID) => {
-                Time::from_datum(datum, is_null).map(Cell::Time)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::TIMESTAMPOID) => {
-                Timestamp::from_datum(datum, is_null).map(Cell::Timestamp)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::TIMESTAMPTZOID) => {
-                TimestampWithTimeZone::from_datum(datum, is_null)
-                    .map(Cell::Timestamptz)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::INTERVALOID) => {
-                Interval::from_datum(datum, is_null).map(Cell::Interval)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::JSONBOID) => {
-                JsonB::from_datum(datum, is_null).map(Cell::Json)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::BYTEAOID) => {
-                Some(Cell::Bytea(datum.cast_mut_ptr::<bytea>()))
-            }
-            PgOid::BuiltIn(PgBuiltInOids::UUIDOID) => {
-                Uuid::from_datum(datum, is_null).map(Cell::Uuid)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::BOOLARRAYOID) => {
-                Vec::<Option<bool>>::from_datum(datum, false).map(Cell::BoolArray)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::INT2ARRAYOID) => {
-                Vec::<Option<i16>>::from_datum(datum, false).map(Cell::I16Array)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::INT4ARRAYOID) => {
-                Vec::<Option<i32>>::from_datum(datum, false).map(Cell::I32Array)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::INT8ARRAYOID) => {
-                Vec::<Option<i64>>::from_datum(datum, false).map(Cell::I64Array)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::FLOAT4ARRAYOID) => {
-                Vec::<Option<f32>>::from_datum(datum, false).map(Cell::F32Array)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::FLOAT8ARRAYOID) => {
-                Vec::<Option<f64>>::from_datum(datum, false).map(Cell::F64Array)
-            }
-            PgOid::BuiltIn(PgBuiltInOids::TEXTARRAYOID) => {
-                Vec::<Option<String>>::from_datum(datum, false).map(Cell::StringArray)
-            }
-            _ => None,
         }
     }
 }
@@ -405,32 +407,36 @@ impl Row {
     }
 
     pub unsafe fn update_from_slot(&mut self, slot: *mut pg_sys::TupleTableSlot) {
-        // Ensure slot contents are accessible (deform tuple if needed)
-        pg_sys::slot_getallattrs(slot);
+        unsafe {
+            // Ensure slot contents are accessible (deform tuple if needed)
+            pg_sys::slot_getallattrs(slot);
 
-        let tup_desc = (*slot).tts_tupleDescriptor;
-        let natts = (*tup_desc).natts as usize;
-        let values = std::slice::from_raw_parts((*slot).tts_values, natts);
-        let nulls = std::slice::from_raw_parts((*slot).tts_isnull, natts);
-        let attrs = std::slice::from_raw_parts((*tup_desc).attrs.as_ptr(), natts);
+            let tup_desc = (*slot).tts_tupleDescriptor;
+            let natts = (*tup_desc).natts as usize;
+            let values = std::slice::from_raw_parts((*slot).tts_values, natts);
+            let nulls = std::slice::from_raw_parts((*slot).tts_isnull, natts);
+            let attrs = std::slice::from_raw_parts((*tup_desc).attrs.as_ptr(), natts);
 
-        // Resize and fill
-        self.cells.resize_with(natts, || None);
+            // Resize and fill
+            self.cells.resize_with(natts, || None);
 
-        for i in 0..natts {
-            let cell = if nulls[i] {
-                None
-            } else {
-                let attr = &attrs[i];
-                Cell::from_polymorphic_datum(values[i], false, attr.atttypid)
-            };
-            self.cells[i] = cell;
+            for i in 0..natts {
+                let cell = if nulls[i] {
+                    None
+                } else {
+                    let attr = &attrs[i];
+                    Cell::from_polymorphic_datum(values[i], false, attr.atttypid)
+                };
+                self.cells[i] = cell;
+            }
         }
     }
 
     pub unsafe fn from_slot(slot: *mut pg_sys::TupleTableSlot) -> Self {
-        let mut row = Self::new();
-        row.update_from_slot(slot);
-        row
+        unsafe {
+            let mut row = Self::new();
+            row.update_from_slot(slot);
+            row
+        }
     }
 }

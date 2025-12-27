@@ -143,69 +143,73 @@ pub unsafe fn extract_and_remove_options(
     options_list_ptr: *mut *mut pg_sys::List,
     valid_options: &[TamOptionDef],
 ) -> Result<Vec<(String, Option<String>)>, String> {
-    let mut custom_opts = Vec::new();
-    let mut new_pg_opts: *mut pg_sys::List = std::ptr::null_mut();
+    unsafe {
+        let mut custom_opts = Vec::new();
+        let mut new_pg_opts: *mut pg_sys::List = std::ptr::null_mut();
 
-    if (*options_list_ptr).is_null() {
-        return Ok(custom_opts);
-    }
+        if (*options_list_ptr).is_null() {
+            return Ok(custom_opts);
+        }
 
-    let cell = (*(*options_list_ptr)).elements;
-    let length = (*(*options_list_ptr)).length;
+        let cell = (*(*options_list_ptr)).elements;
+        let length = (*(*options_list_ptr)).length;
 
-    for i in 0..length {
-        let def_elem_ptr = (*cell.add(i as usize)).ptr_value as *mut pg_sys::DefElem;
-        let def_name_cstr = CStr::from_ptr((*def_elem_ptr).defname);
-        let def_name = def_name_cstr.to_string_lossy().to_string();
+        for i in 0..length {
+            let def_elem_ptr = (*cell.add(i as usize)).ptr_value as *mut pg_sys::DefElem;
+            let def_name_cstr = CStr::from_ptr((*def_elem_ptr).defname);
+            let def_name = def_name_cstr.to_string_lossy().to_string();
 
-        // Check if this option is one of our valid options
-        if let Some(def) = valid_options.iter().find(|opt| opt.name == def_name) {
-            // 1. Extract raw value
-            // Use Postgres internal helper `defGetString` which handles T_String, T_Integer, T_Float, and T_A_Const (PG15+)
-            let raw_val = if (*def_elem_ptr).arg.is_null() {
-                None
-            } else {
-                let val_ptr = pg_sys::defGetString(def_elem_ptr);
-                (!val_ptr.is_null())
-                    .then(|| CStr::from_ptr(val_ptr).to_string_lossy().into_owned())
-            };
+            // Check if this option is one of our valid options
+            if let Some(def) = valid_options.iter().find(|opt| opt.name == def_name) {
+                // 1. Extract raw value
+                // Use Postgres internal helper `defGetString` which handles T_String, T_Integer, T_Float, and T_A_Const (PG15+)
+                let raw_val = if (*def_elem_ptr).arg.is_null() {
+                    None
+                } else {
+                    let val_ptr = pg_sys::defGetString(def_elem_ptr);
+                    (!val_ptr.is_null())
+                        .then(|| CStr::from_ptr(val_ptr).to_string_lossy().into_owned())
+                };
 
-            // 2. Check for duplicate options
-            if custom_opts.iter().any(|(k, _)| k == &def_name) {
-                return Err(format!(
-                    "option '{}' specified more than once",
-                    def_name
-                ));
-            }
-
-            // 3. Validate and normalize value
-            match validate_option_value(def, raw_val) {
-                Ok(validated_val) => {
-                    custom_opts.push((def_name, validated_val));
-                }
-                Err(e) => {
+                // 2. Check for duplicate options
+                if custom_opts.iter().any(|(k, _)| k == &def_name) {
                     return Err(format!(
-                        "Invalid value for option '{}': {}",
-                        def_name, e
+                        "option '{}' specified more than once",
+                        def_name
                     ));
                 }
-            }
-        } else {
-            // Not a known storage option, leave it for Postgres to handle.
-            new_pg_opts =
-                pg_sys::lappend(new_pg_opts, def_elem_ptr as *mut std::ffi::c_void);
-        }
-    }
 
-    *options_list_ptr = new_pg_opts;
-    Ok(custom_opts)
+                // 3. Validate and normalize value
+                match validate_option_value(def, raw_val) {
+                    Ok(validated_val) => {
+                        custom_opts.push((def_name, validated_val));
+                    }
+                    Err(e) => {
+                        return Err(format!(
+                            "Invalid value for option '{}': {}",
+                            def_name, e
+                        ));
+                    }
+                }
+            } else {
+                // Not a known storage option, leave it for Postgres to handle.
+                new_pg_opts =
+                    pg_sys::lappend(new_pg_opts, def_elem_ptr as *mut std::ffi::c_void);
+            }
+        }
+
+        *options_list_ptr = new_pg_opts;
+        Ok(custom_opts)
+    }
 }
 
 /// Legacy wrapper for tablespace options
 pub unsafe fn extract_and_remove_custom_options(
     stmt: *mut pg_sys::CreateTableSpaceStmt,
 ) -> Result<Vec<(String, Option<String>)>, String> {
-    extract_and_remove_options(&mut (*stmt).options, STANDARD_STORAGE_OPTIONS)
+    unsafe {
+        extract_and_remove_options(&mut (*stmt).options, STANDARD_STORAGE_OPTIONS)
+    }
 }
 
 fn validate_option_value(

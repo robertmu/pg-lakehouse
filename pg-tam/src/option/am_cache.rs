@@ -104,47 +104,49 @@ impl AmCache {
     unsafe fn load_and_cache<'a, T: AmCacheable>(
         rel: pg_sys::Relation,
     ) -> Result<&'a T, TableOptionError> {
-        // 1. Load options from Catalog
-        let opts = TableOptions::load_from_catalog((*rel).rd_id)?;
+        unsafe {
+            // 1. Load options from Catalog
+            let opts = TableOptions::load_from_catalog((*rel).rd_id)?;
 
-        // 2. Parse options into Header + Data
-        let (header, data) = if let Some(opts) = opts {
-            T::from_options(&opts)
-        } else {
-            T::default_options()
-        };
+            // 2. Parse options into Header + Data
+            let (header, data) = if let Some(opts) = opts {
+                T::from_options(&opts)
+            } else {
+                T::default_options()
+            };
 
-        // 3. Calculate total size and alignment
-        let header_size = std::mem::size_of::<T>();
-        let total_size = header_size + data.len();
+            // 3. Calculate total size and alignment
+            let header_size = std::mem::size_of::<T>();
+            let total_size = header_size + data.len();
 
-        // 4. Allocate memory in CacheMemoryContext via Postgres allocator (palloc)
-        // We switch to CacheMemoryContext to ensure the memory persists as long as the Relation
-        let ptr = PgMemoryContexts::CacheMemoryContext.switch_to(|_| {
-            let ptr = pg_sys::palloc(total_size) as *mut u8;
+            // 4. Allocate memory in CacheMemoryContext via Postgres allocator (palloc)
+            // We switch to CacheMemoryContext to ensure the memory persists as long as the Relation
+            let ptr = PgMemoryContexts::CacheMemoryContext.switch_to(|_| {
+                let ptr = pg_sys::palloc(total_size) as *mut u8;
 
-            // Copy Header
-            std::ptr::copy_nonoverlapping(
-                &header as *const T as *const u8,
-                ptr,
-                header_size,
-            );
-
-            // Copy Data
-            if !data.is_empty() {
+                // Copy Header
                 std::ptr::copy_nonoverlapping(
-                    data.as_ptr(),
-                    ptr.add(header_size),
-                    data.len(),
+                    &header as *const T as *const u8,
+                    ptr,
+                    header_size,
                 );
-            }
-            ptr
-        });
 
-        // 5. Update rd_amcache
-        (*rel).rd_amcache = ptr as *mut std::ffi::c_void;
+                // Copy Data
+                if !data.is_empty() {
+                    std::ptr::copy_nonoverlapping(
+                        data.as_ptr(),
+                        ptr.add(header_size),
+                        data.len(),
+                    );
+                }
+                ptr
+            });
 
-        // 6. Return reference
-        Ok(&*(ptr as *const T))
+            // 5. Update rd_amcache
+            (*rel).rd_amcache = ptr as *mut std::ffi::c_void;
+
+            // 6. Return reference
+            Ok(&*(ptr as *const T))
+        }
     }
 }

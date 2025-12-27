@@ -85,60 +85,62 @@ unsafe extern "C-unwind" fn process_utility_router(
     dest: *mut pg_sys::DestReceiver,
     completion_tag: *mut pg_sys::QueryCompletion,
 ) {
-    let target_node = (*pstmt).utilityStmt;
-    let tag = (*target_node).type_;
+    unsafe {
+        let target_node = (*pstmt).utilityStmt;
+        let tag = (*target_node).type_;
 
-    // Copy the original statement before on_pre might modify it.
-    // copyObjectImpl allocates in CurrentMemoryContext, so PostgreSQL will manage its lifetime.
-    let copied_node = pg_sys::copyObjectImpl(target_node as *const std::ffi::c_void)
-        as *mut pg_sys::Node;
+        // Copy the original statement before on_pre might modify it.
+        // copyObjectImpl allocates in CurrentMemoryContext, so PostgreSQL will manage its lifetime.
+        let copied_node = pg_sys::copyObjectImpl(target_node as *const std::ffi::c_void)
+            as *mut pg_sys::Node;
 
-    let mut safe_node = UtilityNode::new(target_node);
-    let mut safe_node_copy = UtilityNode::new(copied_node);
+        let mut safe_node = UtilityNode::new(target_node);
+        let mut safe_node_copy = UtilityNode::new(copied_node);
 
-    REGISTRY.with(|registry| {
-        for (reg_tag, hook) in registry.borrow().iter() {
-            if *reg_tag == tag {
-                hook.on_pre(&mut safe_node).report_unwrap();
+        REGISTRY.with(|registry| {
+            for (reg_tag, hook) in registry.borrow().iter() {
+                if *reg_tag == tag {
+                    hook.on_pre(&mut safe_node).report_unwrap();
+                }
+            }
+        });
+
+        // TODO: Consider wrapping these PG calls with PgTryBuilder to safely handle
+        // longjmp (elog(ERROR)) and ensure Rust destructors (like safe_node_copy) are called properly.
+        // Currently, if standard_ProcessUtility errors, Rust stack unwinding might be bypassed.
+        match PREV_PROCESS_UTILITY.get() {
+            Some(Some(prev)) => {
+                prev(
+                    pstmt,
+                    query_string,
+                    read_only_tree,
+                    context,
+                    params,
+                    query_env,
+                    dest,
+                    completion_tag,
+                );
+            }
+            _ => {
+                pg_sys::standard_ProcessUtility(
+                    pstmt,
+                    query_string,
+                    read_only_tree,
+                    context,
+                    params,
+                    query_env,
+                    dest,
+                    completion_tag,
+                );
             }
         }
-    });
 
-    // TODO: Consider wrapping these PG calls with PgTryBuilder to safely handle
-    // longjmp (elog(ERROR)) and ensure Rust destructors (like safe_node_copy) are called properly.
-    // Currently, if standard_ProcessUtility errors, Rust stack unwinding might be bypassed.
-    match PREV_PROCESS_UTILITY.get() {
-        Some(Some(prev)) => {
-            prev(
-                pstmt,
-                query_string,
-                read_only_tree,
-                context,
-                params,
-                query_env,
-                dest,
-                completion_tag,
-            );
-        }
-        _ => {
-            pg_sys::standard_ProcessUtility(
-                pstmt,
-                query_string,
-                read_only_tree,
-                context,
-                params,
-                query_env,
-                dest,
-                completion_tag,
-            );
-        }
+        REGISTRY.with(|registry| {
+            for (reg_tag, hook) in registry.borrow().iter() {
+                if *reg_tag == tag {
+                    hook.on_post(&mut safe_node_copy).report_unwrap();
+                }
+            }
+        });
     }
-
-    REGISTRY.with(|registry| {
-        for (reg_tag, hook) in registry.borrow().iter() {
-            if *reg_tag == tag {
-                hook.on_post(&mut safe_node_copy).report_unwrap();
-            }
-        }
-    });
 }

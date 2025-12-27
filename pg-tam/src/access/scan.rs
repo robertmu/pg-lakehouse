@@ -42,31 +42,33 @@ impl<T> ScanState<T> {
     }
 
     pub unsafe fn row_to_slot(&mut self, slot: *mut pg_sys::TupleTableSlot) {
-        let tup_desc = (*slot).tts_tupleDescriptor;
-        let natts = (*tup_desc).natts as usize;
+        unsafe {
+            let tup_desc = (*slot).tts_tupleDescriptor;
+            let natts = (*tup_desc).natts as usize;
 
-        // Use the slot's own pre-allocated buffers
-        let slot_values = std::slice::from_raw_parts_mut((*slot).tts_values, natts);
-        let slot_nulls = std::slice::from_raw_parts_mut((*slot).tts_isnull, natts);
+            // Use the slot's own pre-allocated buffers
+            let slot_values = std::slice::from_raw_parts_mut((*slot).tts_values, natts);
+            let slot_nulls = std::slice::from_raw_parts_mut((*slot).tts_isnull, natts);
 
-        PgMemoryContexts::For(self.tmp_ctx).switch_to(|_| {
-            for i in 0..natts {
-                let cell = self.row.cells.get_unchecked_mut(i);
-                match cell.take() {
-                    Some(cell) => {
-                        slot_values[i] = cell
-                            .into_datum()
-                            .expect("Failed to convert cell to datum");
-                        slot_nulls[i] = false;
-                    }
-                    None => {
-                        slot_nulls[i] = true;
+            PgMemoryContexts::For(self.tmp_ctx).switch_to(|_| {
+                for i in 0..natts {
+                    let cell = self.row.cells.get_unchecked_mut(i);
+                    match cell.take() {
+                        Some(cell) => {
+                            slot_values[i] = cell
+                                .into_datum()
+                                .expect("Failed to convert cell to datum");
+                            slot_nulls[i] = false;
+                        }
+                        None => {
+                            slot_nulls[i] = true;
+                        }
                     }
                 }
-            }
 
-            pg_sys::ExecStoreVirtualTuple(slot);
-        });
+                pg_sys::ExecStoreVirtualTuple(slot);
+            });
+        }
     }
 }
 
