@@ -27,7 +27,7 @@ pub fn log_debug1(msg: &str) {
 /// For example,
 ///
 /// ```rust,no_run
-/// # use pg_tam::utils::report_info;
+/// # use pg_tam::diag::report_info;
 /// report_info(&format!("this is an info"));
 /// ```
 #[inline]
@@ -47,7 +47,7 @@ pub fn report_info(msg: &str) {
 /// For example,
 ///
 /// ```rust,no_run
-/// # use pg_tam::utils::report_notice;
+/// # use pg_tam::diag::report_notice;
 /// report_notice(&format!("this is a notice"));
 /// ```
 #[inline]
@@ -67,7 +67,7 @@ pub fn report_notice(msg: &str) {
 /// For example,
 ///
 /// ```rust,no_run
-/// # use pg_tam::utils::report_warning;
+/// # use pg_tam::diag::report_warning;
 /// report_warning(&format!("this is a warning"));
 /// ```
 #[inline]
@@ -88,7 +88,7 @@ pub fn report_warning(msg: &str) {
 /// For example,
 ///
 /// ```rust,no_run
-/// # use pg_tam::utils::report_error;
+/// # use pg_tam::diag::report_error;
 /// use pgrx::prelude::PgSqlErrorCode;
 ///
 /// report_error(
@@ -123,7 +123,7 @@ impl From<CreateRuntimeError> for ErrorReport {
 /// For example,
 ///
 /// ```rust,no_run
-/// # use pg_tam::utils::{CreateRuntimeError, create_async_runtime};
+/// # use pg_tam::diag::{CreateRuntimeError, create_async_runtime};
 /// # fn main() -> Result<(), CreateRuntimeError> {
 /// # struct Client {
 /// # }
@@ -147,7 +147,7 @@ pub fn create_async_runtime() -> Result<Runtime, CreateRuntimeError> {
     Ok(Builder::new_current_thread().enable_all().build()?)
 }
 
-pub(crate) trait ReportableError {
+pub trait ReportableError {
     type Output;
 
     fn report_unwrap(self) -> Self::Output;

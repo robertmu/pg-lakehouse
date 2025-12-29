@@ -3,7 +3,7 @@
 //! This module provides a high-level interface for extracting and persisting
 //! custom options from `CREATE TABLE` statements with custom access methods.
 
-use super::storage::{self, TamOptionDef};
+use super::storage_option::{self, TamOptionDef};
 use crate::catalog;
 use crate::pg_wrapper::PgWrapper;
 use pgrx::pg_sys;
@@ -76,7 +76,7 @@ impl TableOptions {
 
         // SAFETY: We hold a mutable reference to the statement, so it is safe to modify via FFI.
         let opts = unsafe {
-            storage::extract_and_remove_options(&mut stmt.options, options_def)
+            storage_option::extract_and_remove_options(&mut stmt.options, options_def)
                 .map_err(TableOptionError::InvalidOption)?
         };
 

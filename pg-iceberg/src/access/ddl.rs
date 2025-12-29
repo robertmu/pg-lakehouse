@@ -14,7 +14,6 @@ impl AmDdl<IcebergError> for IcebergDdl {
     }
 
     fn relation_nontransactional_truncate(_rel: &RelationHandle) -> IcebergResult<()> {
-        // No-op for now: Iceberg table truncation will be handled via Iceberg metadata.
         Ok(())
     }
 

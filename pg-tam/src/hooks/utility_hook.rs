@@ -1,11 +1,9 @@
-use crate::utils::ReportableError;
+use crate::diag::ReportableError;
 use pgrx::pg_sys;
 use pgrx::pg_sys::panic::ErrorReport;
 use pgrx::prelude::*;
-use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::rc::Rc;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock, RwLock};
 use thiserror::Error;
 
 /// Error type for utility hooks
@@ -50,22 +48,17 @@ pub trait UtilityHook {
     fn on_post(&self, context: &mut UtilityNode) -> Result<(), UtilityHookError>;
 }
 
-thread_local! {
-    static REGISTRY: RefCell<Vec<(pg_sys::NodeTag, Rc<dyn UtilityHook>)>> =
-        RefCell::new(Vec::new());
-}
+static REGISTRY: RwLock<Vec<(pg_sys::NodeTag, Arc<dyn UtilityHook + Send + Sync>)>> =
+    RwLock::new(Vec::new());
 
 static PREV_PROCESS_UTILITY: OnceLock<pg_sys::ProcessUtility_hook_type> =
     OnceLock::new();
 
-pub fn register_utility_hook(tag: pg_sys::NodeTag, hook: Box<dyn UtilityHook>) {
-    REGISTRY.with(
-        |registry: &RefCell<
-            Vec<(pg_sys::NodeTag, Rc<dyn UtilityHook + 'static>)>,
-        >| {
-            registry.borrow_mut().push((tag, Rc::from(hook)));
-        },
-    );
+pub fn register_utility_hook(
+    tag: pg_sys::NodeTag,
+    hook: Box<dyn UtilityHook + Send + Sync>,
+) {
+    REGISTRY.write().unwrap().push((tag, Arc::from(hook)));
 
     PREV_PROCESS_UTILITY.get_or_init(|| unsafe {
         let prev = pg_sys::ProcessUtility_hook;
@@ -91,19 +84,20 @@ unsafe extern "C-unwind" fn process_utility_router(
 
         // Copy the original statement before on_pre might modify it.
         // copyObjectImpl allocates in CurrentMemoryContext, so PostgreSQL will manage its lifetime.
-        let copied_node = pg_sys::copyObjectImpl(target_node as *const std::ffi::c_void)
-            as *mut pg_sys::Node;
+        let copied_node =
+            pg_sys::copyObjectImpl(target_node as *const std::ffi::c_void)
+                as *mut pg_sys::Node;
 
         let mut safe_node = UtilityNode::new(target_node);
         let mut safe_node_copy = UtilityNode::new(copied_node);
 
-        REGISTRY.with(|registry| {
-            for (reg_tag, hook) in registry.borrow().iter() {
-                if *reg_tag == tag {
-                    hook.on_pre(&mut safe_node).report_unwrap();
-                }
+        // Pre-hooks
+        let hooks = { REGISTRY.read().unwrap().clone() };
+        for (reg_tag, hook) in hooks.iter() {
+            if *reg_tag == tag {
+                hook.on_pre(&mut safe_node).report_unwrap();
             }
-        });
+        }
 
         // TODO: Consider wrapping these PG calls with PgTryBuilder to safely handle
         // longjmp (elog(ERROR)) and ensure Rust destructors (like safe_node_copy) are called properly.
@@ -135,12 +129,10 @@ unsafe extern "C-unwind" fn process_utility_router(
             }
         }
 
-        REGISTRY.with(|registry| {
-            for (reg_tag, hook) in registry.borrow().iter() {
-                if *reg_tag == tag {
-                    hook.on_post(&mut safe_node_copy).report_unwrap();
-                }
+        for (reg_tag, hook) in hooks.iter() {
+            if *reg_tag == tag {
+                hook.on_post(&mut safe_node_copy).report_unwrap();
             }
-        });
+        }
     }
 }

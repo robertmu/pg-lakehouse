@@ -16,7 +16,12 @@ pub const OPT_ENDPOINT: &str = "endpoint";
 pub const OPT_ALLOW_HTTP: &str = "allow_http";
 pub const OPT_ACCESS_KEY_ID: &str = "access_key_id";
 pub const OPT_SECRET_ACCESS_KEY: &str = "secret_access_key";
-pub const OPT_IO_CONCURRENCY: &str = "io_concurrency";
+// ============================================================================
+//  Default Value Constants
+// ============================================================================
+pub const DEFAULT_PROTOCOL: &str = "s3";
+pub const DEFAULT_S3_REGION: &str = "us-east-1";
+pub const DEFAULT_ALLOW_HTTP: bool = false;
 
 // ============================================================================
 //  Common Lakehouse Tablespace Option Definitions
@@ -28,7 +33,6 @@ pub enum StorageCategory {
     S3,
     GCS,
     Azure,
-    FileSystem,
 }
 
 #[derive(Debug, Clone)]
@@ -64,9 +68,9 @@ static STANDARD_STORAGE_OPTIONS: &[TamOptionDef] = &[
         name: OPT_PROTOCOL,
         category: StorageCategory::Common,
         kind: OptionKind::String {
-            default: Some("s3"),
+            default: Some(DEFAULT_PROTOCOL),
         },
-        description: "Storage protocol (s3, gcs, azure, fs)",
+        description: "Storage protocol (s3, gcs, azure)",
     },
     // --- S3 ---
     TamOptionDef {
@@ -79,7 +83,7 @@ static STANDARD_STORAGE_OPTIONS: &[TamOptionDef] = &[
         name: OPT_REGION,
         category: StorageCategory::S3,
         kind: OptionKind::String {
-            default: Some("us-east-1"),
+            default: Some(DEFAULT_S3_REGION),
         },
         description: "AWS Region",
     },
@@ -92,7 +96,9 @@ static STANDARD_STORAGE_OPTIONS: &[TamOptionDef] = &[
     TamOptionDef {
         name: OPT_ALLOW_HTTP,
         category: StorageCategory::S3,
-        kind: OptionKind::Bool { default: false },
+        kind: OptionKind::Bool {
+            default: DEFAULT_ALLOW_HTTP,
+        },
         description: "Allow HTTP connections (insecure)",
     },
     TamOptionDef {
@@ -106,17 +112,6 @@ static STANDARD_STORAGE_OPTIONS: &[TamOptionDef] = &[
         category: StorageCategory::S3,
         kind: OptionKind::String { default: None },
         description: "S3 Secret Access Key",
-    },
-    // --- FileSystem ---
-    TamOptionDef {
-        name: OPT_IO_CONCURRENCY,
-        category: StorageCategory::FileSystem,
-        kind: OptionKind::Int {
-            default: 4,
-            min: Some(1),
-            max: Some(64),
-        },
-        description: "IO Concurrency for local operations",
     },
 ];
 
@@ -155,7 +150,8 @@ pub unsafe fn extract_and_remove_options(
         let length = (*(*options_list_ptr)).length;
 
         for i in 0..length {
-            let def_elem_ptr = (*cell.add(i as usize)).ptr_value as *mut pg_sys::DefElem;
+            let def_elem_ptr =
+                (*cell.add(i as usize)).ptr_value as *mut pg_sys::DefElem;
             let def_name_cstr = CStr::from_ptr((*def_elem_ptr).defname);
             let def_name = def_name_cstr.to_string_lossy().to_string();
 
@@ -167,8 +163,9 @@ pub unsafe fn extract_and_remove_options(
                     None
                 } else {
                     let val_ptr = pg_sys::defGetString(def_elem_ptr);
-                    (!val_ptr.is_null())
-                        .then(|| CStr::from_ptr(val_ptr).to_string_lossy().into_owned())
+                    (!val_ptr.is_null()).then(|| {
+                        CStr::from_ptr(val_ptr).to_string_lossy().into_owned()
+                    })
                 };
 
                 // 2. Check for duplicate options
@@ -193,8 +190,10 @@ pub unsafe fn extract_and_remove_options(
                 }
             } else {
                 // Not a known storage option, leave it for Postgres to handle.
-                new_pg_opts =
-                    pg_sys::lappend(new_pg_opts, def_elem_ptr as *mut std::ffi::c_void);
+                new_pg_opts = pg_sys::lappend(
+                    new_pg_opts,
+                    def_elem_ptr as *mut std::ffi::c_void,
+                );
             }
         }
 

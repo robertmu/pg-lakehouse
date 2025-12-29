@@ -1,4 +1,4 @@
-use crate::option::storage;
+use crate::option::storage_option;
 use crate::pg_wrapper::{CacheRegisterSyscacheCallback, PgWrapper, PgWrapperError};
 use pgrx::pg_sys;
 use pgrx::prelude::*;
@@ -34,13 +34,41 @@ pub struct S3Options {
     pub secret_access_key: Option<String>,
 }
 
+impl S3Options {
+    /// Converts S3 options into a HashMap of properties.
+    pub fn to_props(&self) -> HashMap<String, String> {
+        let mut props = HashMap::new();
+        if let Some(bucket) = &self.bucket {
+            props.insert(storage_option::OPT_BUCKET.to_string(), bucket.clone());
+        }
+        props.insert(storage_option::OPT_REGION.to_string(), self.region.clone());
+        if let Some(endpoint) = &self.endpoint {
+            props.insert(storage_option::OPT_ENDPOINT.to_string(), endpoint.clone());
+        }
+        props.insert(
+            storage_option::OPT_ALLOW_HTTP.to_string(),
+            self.allow_http.to_string(),
+        );
+        if let Some(ak) = &self.access_key_id {
+            props.insert(storage_option::OPT_ACCESS_KEY_ID.to_string(), ak.clone());
+        }
+        if let Some(sk) = &self.secret_access_key {
+            props.insert(
+                storage_option::OPT_SECRET_ACCESS_KEY.to_string(),
+                sk.clone(),
+            );
+        }
+        props
+    }
+}
+
 impl Default for S3Options {
     fn default() -> Self {
         Self {
             bucket: None,
-            region: "us-east-1".to_string(),
+            region: storage_option::DEFAULT_S3_REGION.to_string(),
             endpoint: None,
-            allow_http: false,
+            allow_http: storage_option::DEFAULT_ALLOW_HTTP,
             access_key_id: None,
             secret_access_key: None,
         }
@@ -53,6 +81,20 @@ pub struct GcsOptions {
     pub bucket: Option<String>,
     pub project_id: Option<String>,
     // TODO: Add more GCS-specific options as needed
+}
+
+impl GcsOptions {
+    /// Converts GCS options into a HashMap of properties.
+    pub fn to_props(&self) -> HashMap<String, String> {
+        let mut props = HashMap::new();
+        if let Some(bucket) = &self.bucket {
+            props.insert(storage_option::OPT_BUCKET.to_string(), bucket.clone());
+        }
+        if let Some(project_id) = &self.project_id {
+            props.insert("project_id".to_string(), project_id.clone());
+        }
+        props
+    }
 }
 
 impl Default for GcsOptions {
@@ -72,27 +114,25 @@ pub struct AzureOptions {
     // TODO: Add more Azure-specific options as needed
 }
 
+impl AzureOptions {
+    /// Converts Azure options into a HashMap of properties.
+    pub fn to_props(&self) -> HashMap<String, String> {
+        let mut props = HashMap::new();
+        if let Some(container) = &self.container {
+            props.insert("container".to_string(), container.clone());
+        }
+        if let Some(account) = &self.account_name {
+            props.insert("account_name".to_string(), account.clone());
+        }
+        props
+    }
+}
+
 impl Default for AzureOptions {
     fn default() -> Self {
         Self {
             container: None,
             account_name: None,
-        }
-    }
-}
-
-/// Local filesystem storage options
-#[derive(Debug, Clone)]
-pub struct FileSystemOptions {
-    pub path: Option<String>,
-    pub io_concurrency: i32,
-}
-
-impl Default for FileSystemOptions {
-    fn default() -> Self {
-        Self {
-            path: None,
-            io_concurrency: 4,
         }
     }
 }
@@ -107,7 +147,59 @@ pub enum StorageOptions {
     S3(S3Options),
     Gcs(GcsOptions),
     Azure(AzureOptions),
-    FileSystem(FileSystemOptions),
+}
+
+impl StorageOptions {
+    /// Returns true if the storage is a distributed filesystem (S3, GCS, or Azure).
+    pub fn is_distributed_filesystem(&self) -> bool {
+        match self {
+            StorageOptions::S3(_)
+            | StorageOptions::Gcs(_)
+            | StorageOptions::Azure(_) => true,
+        }
+    }
+
+    /// Returns the protocol name for this storage type.
+    pub fn protocol(&self) -> &'static str {
+        match self {
+            StorageOptions::S3(_) => "s3",
+            StorageOptions::Gcs(_) => "gcs",
+            StorageOptions::Azure(_) => "azure",
+        }
+    }
+
+    /// Returns the base URL for this storage configuration.
+    ///
+    /// Format:
+    /// - S3: `s3://{bucket}`
+    /// - GCS: `gs://{bucket}`
+    /// - Azure: `az://{account}/{container}`
+    pub fn to_base_url(&self) -> String {
+        match self {
+            StorageOptions::S3(s3) => {
+                let bucket = s3.bucket.as_deref().unwrap_or("default");
+                format!("s3://{}", bucket)
+            }
+            StorageOptions::Gcs(gcs) => {
+                let bucket = gcs.bucket.as_deref().unwrap_or("default");
+                format!("gs://{}", bucket)
+            }
+            StorageOptions::Azure(azure) => {
+                let account = azure.account_name.as_deref().unwrap_or("default");
+                let container = azure.container.as_deref().unwrap_or("default");
+                format!("az://{}/{}", account, container)
+            }
+        }
+    }
+
+    /// Converts the storage options into a HashMap of properties.
+    pub fn to_props(&self) -> HashMap<String, String> {
+        match self {
+            StorageOptions::S3(s3) => s3.to_props(),
+            StorageOptions::Gcs(gcs) => gcs.to_props(),
+            StorageOptions::Azure(azure) => azure.to_props(),
+        }
+    }
 }
 
 impl Default for StorageOptions {
@@ -124,6 +216,13 @@ impl Default for StorageOptions {
 #[derive(Debug, Clone)]
 pub struct CachedTableSpaceOpts {
     pub storage: StorageOptions,
+}
+
+impl CachedTableSpaceOpts {
+    /// Returns true if the tablespace is on a distributed filesystem.
+    pub fn is_distributed_filesystem(&self) -> bool {
+        self.storage.is_distributed_filesystem()
+    }
 }
 
 impl Default for CachedTableSpaceOpts {
@@ -171,6 +270,15 @@ fn initialize_tablespace_cache() {
 //  Public API
 // ============================================================================
 
+/// Check if a tablespace is a distributed filesystem.
+pub fn is_distributed_tablespace(spcid: pg_sys::Oid) -> bool {
+    get_tablespace(spcid)
+        .ok()
+        .flatten()
+        .map(|opts| opts.is_distributed_filesystem())
+        .unwrap_or(false)
+}
+
 /// Get tablespace options for a given OID.
 ///
 /// Returns an `Rc` to avoid cloning the entire struct on each access.
@@ -184,12 +292,6 @@ pub fn get_tablespace(
     spcid: pg_sys::Oid,
 ) -> Result<Option<Rc<CachedTableSpaceOpts>>, TablespaceCacheError> {
     initialize_tablespace_cache();
-
-    let spcid = if spcid == pg_sys::InvalidOid {
-        unsafe { pg_sys::MyDatabaseTableSpace }
-    } else {
-        spcid
-    };
 
     TABLESPACE_CACHE.with(|cache| {
         // Fast path: check cache
@@ -216,9 +318,7 @@ fn lookup_tablespace_options(
 
     let tp = PgWrapper::search_sys_cache1(
         cache_id,
-        spcid
-            .into_datum()
-            .expect("Failed to convert spcid Oid to Datum"),
+        pg_sys::Datum::from(u32::from(spcid) as usize),
     )?;
 
     let Some(tp) = tp else {
@@ -264,7 +364,7 @@ fn parse_options_to_cached(options_vec: Vec<String>) -> CachedTableSpaceOpts {
 
     for opt_str in &options_vec {
         if let Some((key, value)) = opt_str.split_once('=') {
-            if key == storage::OPT_PROTOCOL {
+            if key == storage_option::OPT_PROTOCOL {
                 protocol = value.to_string();
             }
             opts_map.insert(key, value.to_string());
@@ -276,10 +376,10 @@ fn parse_options_to_cached(options_vec: Vec<String>) -> CachedTableSpaceOpts {
         "s3" => StorageOptions::S3(parse_s3_options(&opts_map)),
         "gcs" => StorageOptions::Gcs(parse_gcs_options(&opts_map)),
         "azure" => StorageOptions::Azure(parse_azure_options(&opts_map)),
-        "fs" | "file" | "filesystem" => {
-            StorageOptions::FileSystem(parse_fs_options(&opts_map))
-        }
-        unknown => panic!("unexpected storage protocol: {}", unknown),
+        unknown => panic!(
+            "unsupported storage protocol: {}. Supported protocols: s3, gcs, azure",
+            unknown
+        ),
     };
 
     CachedTableSpaceOpts { storage }
@@ -287,24 +387,24 @@ fn parse_options_to_cached(options_vec: Vec<String>) -> CachedTableSpaceOpts {
 
 fn parse_s3_options(opts: &HashMap<&str, String>) -> S3Options {
     S3Options {
-        bucket: opts.get(storage::OPT_BUCKET).cloned(),
+        bucket: opts.get(storage_option::OPT_BUCKET).cloned(),
         region: opts
-            .get(storage::OPT_REGION)
+            .get(storage_option::OPT_REGION)
             .cloned()
-            .unwrap_or_else(|| "us-east-1".to_string()),
-        endpoint: opts.get(storage::OPT_ENDPOINT).cloned(),
+            .unwrap_or_else(|| storage_option::DEFAULT_S3_REGION.to_string()),
+        endpoint: opts.get(storage_option::OPT_ENDPOINT).cloned(),
         allow_http: opts
-            .get(storage::OPT_ALLOW_HTTP)
-            .and_then(|v| storage::parse_bool(v))
-            .unwrap_or(false),
-        access_key_id: opts.get(storage::OPT_ACCESS_KEY_ID).cloned(),
-        secret_access_key: opts.get(storage::OPT_SECRET_ACCESS_KEY).cloned(),
+            .get(storage_option::OPT_ALLOW_HTTP)
+            .and_then(|v| storage_option::parse_bool(v))
+            .unwrap_or(storage_option::DEFAULT_ALLOW_HTTP),
+        access_key_id: opts.get(storage_option::OPT_ACCESS_KEY_ID).cloned(),
+        secret_access_key: opts.get(storage_option::OPT_SECRET_ACCESS_KEY).cloned(),
     }
 }
 
 fn parse_gcs_options(opts: &HashMap<&str, String>) -> GcsOptions {
     GcsOptions {
-        bucket: opts.get(storage::OPT_BUCKET).cloned(),
+        bucket: opts.get(storage_option::OPT_BUCKET).cloned(),
         project_id: None, // TODO: Add constant when GCS options are defined
     }
 }
@@ -313,15 +413,5 @@ fn parse_azure_options(_opts: &HashMap<&str, String>) -> AzureOptions {
     AzureOptions {
         container: None, // TODO: Add constant when Azure options are defined
         account_name: None,
-    }
-}
-
-fn parse_fs_options(opts: &HashMap<&str, String>) -> FileSystemOptions {
-    FileSystemOptions {
-        path: None, // TODO: Add path option constant
-        io_concurrency: opts
-            .get(storage::OPT_IO_CONCURRENCY)
-            .and_then(|v| v.parse::<i32>().ok())
-            .unwrap_or(4),
     }
 }

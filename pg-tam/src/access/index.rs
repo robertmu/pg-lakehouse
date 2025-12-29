@@ -9,7 +9,7 @@ use crate::handles::{
     CallbackStateHandle, IndexBuildCallbackHandle, IndexInfoHandle, ItemPointer,
     RelationHandle, SnapshotHandle, TableScanDescHandle, ValidateIndexStateHandle,
 };
-use crate::utils::ReportableError;
+use crate::diag::ReportableError;
 use pgrx::memcxt::PgMemoryContexts;
 use pgrx::pg_sys::panic::ErrorReport;
 use pgrx::prelude::*;

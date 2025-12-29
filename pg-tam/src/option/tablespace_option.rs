@@ -3,7 +3,7 @@
 //! This module provides a high-level interface for extracting and persisting
 //! custom options from `CREATE TABLESPACE` statements.
 
-use super::storage;
+use super::storage_option;
 use crate::pg_wrapper::PgWrapper;
 use pgrx::pg_sys;
 use pgrx::pg_sys::panic::ErrorReport;
@@ -50,7 +50,7 @@ impl TablespaceOptions {
         // Call into the FFI layer (unsafe)
         // SAFETY: We hold a mutable reference to the statement, so it is safe to modify it via FFI.
         let opts = unsafe {
-            storage::extract_and_remove_custom_options(stmt)
+            storage_option::extract_and_remove_custom_options(stmt)
                 .map_err(TablespaceError::InvalidOption)?
         };
 

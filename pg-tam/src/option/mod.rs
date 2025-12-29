@@ -5,17 +5,17 @@
 //! - `CREATE TABLE` statements (with custom access methods)
 //!
 pub mod am_cache;
-mod storage;
-mod table;
-mod tablespace;
+mod storage_option;
+mod table_option;
 pub mod tablespace_cache;
+mod tablespace_option;
 pub mod utils;
 
 // Re-export commonly used types
 pub use am_cache::{AmCache, AmCacheable};
-pub use storage::{
-    extract_and_remove_options, OptionKind, StorageCategory, TamOptionDef,
+pub use storage_option::{
+    OptionKind, StorageCategory, TamOptionDef, extract_and_remove_options,
 };
-pub use table::{TableOptionError, TableOptions};
-pub use tablespace::{TablespaceError, TablespaceOptions};
+pub use table_option::{TableOptionError, TableOptions};
+pub use tablespace_option::{TablespaceError, TablespaceOptions};
 pub use utils::{append_string, get_string_at_offset};

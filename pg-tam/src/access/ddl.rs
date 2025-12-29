@@ -5,7 +5,7 @@
 
 use crate::api::AmDdl;
 use crate::handles::{RelFileLocator, RelationHandle};
-use crate::utils::ReportableError;
+use crate::diag::ReportableError;
 use pgrx::pg_sys::panic::ErrorReport;
 use pgrx::prelude::*;
 

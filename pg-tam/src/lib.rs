@@ -42,11 +42,17 @@ pub mod registry;
 /// Storage and table options handling
 pub mod option;
 
-/// Generic ProcessUtility hook framework
-pub mod utility_hook;
+/// PostgreSQL hooks framework (utility, object access, etc.)
+pub mod hooks;
 
-/// Helper functions and utilities
-pub mod utils;
+/// Custom WAL Resource Manager framework
+pub mod wal;
+
+/// Generic Resource Cleanup Manager (similar to PG's ResourceOwner callbacks)
+pub mod resource;
+
+/// Helper functions and diagnostics
+pub mod diag;
 
 /// Wrapper for PostgreSQL functions
 pub mod pg_wrapper;
@@ -56,26 +62,45 @@ pub mod catalog;
 
 /// The prelude includes all necessary imports to make pg_tam work
 pub mod prelude {
+    pub use crate::access::pending_delete::{
+        PendingDelete, init_xact_callback, pending_delete_size,
+        register_pending_delete,
+    };
     pub use crate::api::*;
     pub use crate::data::*;
-    pub use crate::handles::*;
+    pub use crate::diag::{
+        CreateRuntimeError, create_async_runtime, log_debug1, report_error,
+        report_info, report_notice, report_warning,
+    };
+    pub use crate::handles::{
+        AttrWidthsHandle, BufferAccessStrategyHandle, BulkInsertStateHandle,
+        CallbackStateHandle, IndexBuildCallbackHandle, IndexInfoHandle, ItemPointer,
+        ParallelTableScanDescHandle, ReadStreamHandle, RelFileLocator,
+        RelationHandle, SampleScanStateHandle, ScanDirection, ScanKeyHandle,
+        SnapshotHandle, TBMIterateResultHandle, TM_FailureData, TableGuard,
+        TableScanDescHandle, TupleTableSlotHandle, VacuumParamsHandle,
+        ValidateIndexStateHandle, VarlenaHandle,
+    };
+    pub use crate::hooks::{
+        UtilityHook, UtilityHookError, UtilityNode, register_utility_hook,
+    };
     pub use crate::option::{
         TableOptionError, TableOptions, TablespaceError, TablespaceOptions,
     };
     pub use crate::pg_table_am;
     pub use crate::registry::make_table_am_routine;
-    pub use crate::utility_hook::{
-        register_utility_hook, UtilityHook, UtilityHookError, UtilityNode,
+    pub use crate::resource::{
+        ResourceHandle, forget_resource, init_resource_manager, remember_resource,
     };
-    pub use crate::utils::{
-        create_async_runtime, log_debug1, report_error, report_info, report_notice,
-        report_warning, CreateRuntimeError,
+    pub use crate::wal::{
+        RmgrId, WalRecord, WalRecordBuilder, WalResourceManager, WalRmgrError,
+        XLogRecPtr, register_wal_rmgr,
     };
     pub use tokio::runtime::Runtime;
 }
 
-use pgrx::prelude::*;
 use pgrx::AllocatedByPostgres;
+use pgrx::prelude::*;
 
 /// Internal memory context management
 mod memory;

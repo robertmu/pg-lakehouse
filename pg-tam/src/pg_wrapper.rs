@@ -32,6 +32,27 @@ impl PgWrapper {
         }
     }
 
+    pub fn get_namespace_name(
+        nspid: pg_sys::Oid,
+    ) -> Result<Option<String>, PgWrapperError> {
+        unsafe {
+            PgTryBuilder::new(move || {
+                let ptr = pg_sys::get_namespace_name(nspid);
+                if ptr.is_null() {
+                    Ok(None)
+                } else {
+                    let name = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+                    pg_sys::pfree(ptr as *mut core::ffi::c_void);
+                    Ok(Some(name))
+                }
+            })
+            .catch_others(|err| {
+                Err(PgWrapperError::PostgresError(format!("{:?}", err)))
+            })
+            .execute()
+        }
+    }
+
     pub fn get_relname_relid(
         relname: &CStr,
         relnamespace: pg_sys::Oid,

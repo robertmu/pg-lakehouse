@@ -1,3 +1,6 @@
+use pg_tam::option::tablespace_cache::TablespaceCacheError;
+use pg_tam::option::TableOptionError;
+use pg_tam::pg_wrapper::PgWrapperError;
 use pg_tam::prelude::{CreateRuntimeError, TablespaceError};
 use pgrx::pg_sys::panic::ErrorReport;
 use pgrx::prelude::PgSqlErrorCode;
@@ -7,6 +10,27 @@ use thiserror::Error;
 pub enum IcebergError {
     #[error("tablespace error: {0}")]
     TablespaceError(#[from] TablespaceError),
+
+    #[error("tablespace cache error: {0}")]
+    TablespaceCacheError(#[from] TablespaceCacheError),
+
+    #[error("table option error: {0}")]
+    TableOptionError(#[from] TableOptionError),
+
+    #[error("pg wrapper error: {0}")]
+    PgWrapperError(#[from] PgWrapperError),
+
+    #[error("tablespace options not found")]
+    TablespaceNotFound,
+
+    #[error("namespace name is null")]
+    NamespaceNull,
+
+    #[error("metadata location is null")]
+    MetadataLocationNull,
+
+    #[error("schema build error: {0}")]
+    SchemaBuildError(String),
 
     #[error("column {0} is not found in source")]
     ColumnNotFound(String),
@@ -60,7 +84,18 @@ pub enum IcebergError {
 impl From<IcebergError> for ErrorReport {
     fn from(value: IcebergError) -> Self {
         let error_code = match &value {
-            IcebergError::TablespaceError(_) => PgSqlErrorCode::ERRCODE_INVALID_PARAMETER_VALUE,
+            IcebergError::TablespaceError(_)
+            | IcebergError::TablespaceCacheError(_)
+            | IcebergError::TableOptionError(_)
+            | IcebergError::TablespaceNotFound => PgSqlErrorCode::ERRCODE_INVALID_PARAMETER_VALUE,
+
+            IcebergError::PgWrapperError(_) => PgSqlErrorCode::ERRCODE_INTERNAL_ERROR,
+
+            IcebergError::NamespaceNull | IcebergError::MetadataLocationNull => {
+                PgSqlErrorCode::ERRCODE_UNDEFINED_OBJECT
+            }
+
+            IcebergError::SchemaBuildError(_) => PgSqlErrorCode::ERRCODE_INVALID_OBJECT_DEFINITION,
 
             IcebergError::ColumnNotFound(_) => PgSqlErrorCode::ERRCODE_UNDEFINED_COLUMN,
 

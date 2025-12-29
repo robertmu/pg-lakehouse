@@ -22,7 +22,12 @@
 //! +-------------------------------------------------------+
 //! ```
 
+use super::table_options::{
+    OPT_COMPRESSION_CODEC, OPT_COMPRESSION_CODEC_DEFAULT, OPT_FORMAT_VERSION,
+    OPT_FORMAT_VERSION_DEFAULT, OPT_WRITE_FORMAT, OPT_WRITE_FORMAT_DEFAULT,
+};
 use pg_tam::option::{AmCacheable, TableOptions, append_string, get_string_at_offset};
+use std::collections::HashMap;
 
 /// Iceberg table options cached in rd_amcache.
 ///
@@ -43,13 +48,15 @@ unsafe impl AmCacheable for IcebergTableOptionCache {
         let header_size = std::mem::size_of::<Self>();
         let mut data = Vec::new();
 
-        let format_version = opts.get_int("format-version").unwrap_or(2);
+        let format_version = opts
+            .get_int(OPT_FORMAT_VERSION)
+            .unwrap_or(OPT_FORMAT_VERSION_DEFAULT);
         let compression = opts
-            .get_str("write.parquet.compression-codec")
-            .unwrap_or_else(|| "zstd".to_string());
+            .get_str(OPT_COMPRESSION_CODEC)
+            .unwrap_or_else(|| OPT_COMPRESSION_CODEC_DEFAULT.to_string());
         let write_format = opts
-            .get_str("write.format.default")
-            .unwrap_or_else(|| "parquet".to_string());
+            .get_str(OPT_WRITE_FORMAT)
+            .unwrap_or_else(|| OPT_WRITE_FORMAT_DEFAULT.to_string());
 
         let compression_offset = append_string(&mut data, header_size, &compression);
         let write_format_offset = append_string(&mut data, header_size, &write_format);
@@ -68,12 +75,14 @@ unsafe impl AmCacheable for IcebergTableOptionCache {
         let header_size = std::mem::size_of::<Self>();
         let mut data = Vec::new();
 
-        let compression_offset = append_string(&mut data, header_size, "zstd");
-        let write_format_offset = append_string(&mut data, header_size, "parquet");
+        let compression_offset =
+            append_string(&mut data, header_size, OPT_COMPRESSION_CODEC_DEFAULT);
+        let write_format_offset =
+            append_string(&mut data, header_size, OPT_WRITE_FORMAT_DEFAULT);
 
         (
             Self {
-                format_version: 2,
+                format_version: OPT_FORMAT_VERSION_DEFAULT,
                 compression_offset,
                 write_format_offset,
             },
@@ -89,6 +98,26 @@ impl IcebergTableOptionCache {
 
     pub fn write_format(&self) -> &str {
         unsafe { get_string_at_offset(self as *const _ as *const u8, self.write_format_offset) }
+    }
+
+    /// Convert cached options to Iceberg table properties HashMap.
+    ///
+    /// This is the single source of truth for converting options to properties.
+    /// All option-to-property mapping logic is centralized here.
+    pub fn to_properties(&self) -> HashMap<String, String> {
+        let mut properties = HashMap::new();
+
+        properties.insert(
+            OPT_COMPRESSION_CODEC.to_string(),
+            self.compression().to_string(),
+        );
+
+        properties.insert(
+            OPT_WRITE_FORMAT.to_string(),
+            self.write_format().to_string(),
+        );
+
+        properties
     }
 }
 

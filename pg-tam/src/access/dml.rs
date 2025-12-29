@@ -8,7 +8,7 @@ use crate::data::Row;
 use crate::handles::{
     BulkInsertStateHandle, ItemPointer, SnapshotHandle, TM_FailureData,
 };
-use crate::utils::{report_warning, ReportableError};
+use crate::diag::{report_warning, ReportableError};
 use pgrx::pg_sys::panic::ErrorReport;
 use pgrx::prelude::*;
 use std::any::Any;

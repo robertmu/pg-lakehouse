@@ -47,7 +47,10 @@ impl FileIO {
         Self::new(Arc::new(LocalStorage::default()))
     }
 
-    pub fn from_scheme_with_props(scheme: &str, props: HashMap<String, String>) -> Result<Self> {
+    pub fn from_scheme_with_props(
+        scheme: &str,
+        props: HashMap<String, String>,
+    ) -> Result<Self> {
         let mut storage: Arc<dyn Storage> = match scheme {
             "memory" => Arc::new(MemoryStorage::new()),
             "file" | "" => Arc::new(LocalStorage::default()),
@@ -55,7 +58,7 @@ impl FileIO {
                 return Err(Error::new(
                     ErrorKind::FeatureUnsupported,
                     format!("Unsupported storage scheme: {}", scheme),
-                ))
+                ));
             }
         };
 
@@ -126,6 +129,13 @@ impl FileIO {
         self.storage.exists(&path_str[relative_path_pos..])
     }
 
+    /// Remove a directory and all its contents recursively.
+    pub fn remove_dir_all(&self, path: impl AsRef<str>) -> Result<()> {
+        let path_str = path.as_ref();
+        let relative_path_pos = self.prefix_len(path_str);
+        self.storage.remove_dir_all(&path_str[relative_path_pos..])
+    }
+
     /// Returns the length of URL prefix (e.g., `scheme://`) to strip from the path.
     fn prefix_len(&self, path: &str) -> usize {
         let prefix = format!("{}://", self.storage.scheme());
@@ -134,6 +144,11 @@ impl FileIO {
         } else {
             0
         }
+    }
+
+    /// Get the underlying storage implementation.
+    pub fn storage(&self) -> &Arc<dyn Storage> {
+        &self.storage
     }
 }
 

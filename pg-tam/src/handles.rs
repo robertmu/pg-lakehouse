@@ -4,6 +4,7 @@
 //! from PostgreSQL. These wrappers ensure memory safety and provide a clean
 //! API for interacting with PostgreSQL's C API.
 
+use crate::pg_wrapper::{PgWrapper, PgWrapperError};
 use pgrx::pg_sys;
 
 #[derive(Debug)]
@@ -24,6 +25,31 @@ impl<'a> RelationHandle<'a> {
     #[inline]
     pub fn as_raw(&self) -> pg_sys::Relation {
         self.inner
+    }
+
+    #[inline]
+    pub fn tablespace_oid(&self) -> pg_sys::Oid {
+        unsafe { (*(*self.inner).rd_rel).reltablespace }
+    }
+
+    #[inline]
+    pub fn namespace_oid(&self) -> pg_sys::Oid {
+        unsafe { (*(*self.inner).rd_rel).relnamespace }
+    }
+
+    #[inline]
+    pub fn relation_name(&self) -> String {
+        unsafe {
+            let name_ptr = (*(*self.inner).rd_rel).relname.data.as_ptr();
+            std::ffi::CStr::from_ptr(name_ptr)
+                .to_string_lossy()
+                .to_string()
+        }
+    }
+
+    #[inline]
+    pub fn relkind(&self) -> i8 {
+        unsafe { (*(*self.inner).rd_rel).relkind }
     }
 }
 
@@ -543,5 +569,72 @@ impl TM_FailureData {
                 (*ptr).traversed = self.traversed;
             }
         }
+    }
+}
+
+/// RAII guard for table handle - automatically closes table when dropped.
+///
+/// This struct provides safe resource management for PostgreSQL table handles.
+/// When the guard goes out of scope, it automatically closes the table with
+/// the appropriate lock mode.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pg_tam::handles::TableGuard;
+/// use pgrx::pg_sys;
+///
+/// let guard = TableGuard::open(oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)?;
+/// let handle = guard.as_handle();
+/// // ... use handle ...
+/// // Table is automatically closed when guard goes out of scope
+/// ```
+#[derive(Debug)]
+pub struct TableGuard<'a> {
+    rel: pg_sys::Relation,
+    lock_mode: pg_sys::LOCKMODE,
+    _phantom: std::marker::PhantomData<&'a ()>,
+}
+
+impl<'a> TableGuard<'a> {
+    /// Opens a table with the specified lock mode.
+    ///
+    /// # Arguments
+    /// * `oid` - The OID of the table to open
+    /// * `lock_mode` - The lock mode to use when opening the table
+    ///
+    /// # Returns
+    /// A `TableGuard` that will automatically close the table when dropped
+    pub fn open(
+        oid: pg_sys::Oid,
+        lock_mode: pg_sys::LOCKMODE,
+    ) -> Result<Self, PgWrapperError> {
+        let rel = PgWrapper::table_open(oid, lock_mode)?;
+        Ok(Self {
+            rel,
+            lock_mode,
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
+    /// Get a `RelationHandle` from this guard.
+    ///
+    /// The returned handle borrows from this guard, ensuring the table
+    /// remains open while the handle is in use.
+    #[inline]
+    pub fn as_handle(&self) -> RelationHandle<'_> {
+        unsafe { RelationHandle::from_raw(self.rel) }
+    }
+
+    /// Get the raw relation pointer.
+    #[inline]
+    pub fn as_raw(&self) -> pg_sys::Relation {
+        self.rel
+    }
+}
+
+impl Drop for TableGuard<'_> {
+    fn drop(&mut self) {
+        let _ = PgWrapper::table_close(self.rel, self.lock_mode);
     }
 }
